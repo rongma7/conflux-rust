@@ -17,7 +17,27 @@ parking_lot = { workspace = true }
 regex = { workspace = true }
 malloc_size_of = { workspace = true }
 malloc_size_of_derive = { workspace = true }
-rocksdb = { workspace = true }
+
+# for storage
+#rocksdb = { workspace = true }
+
+# for storage2 begin
+#parity-util-mem = { workspace = true, default-features = false }
+
+# OpenBSD and MSVC are unteested and shouldn't enable jemalloc:
+# https://github.com/tikv/jemallocator/blob/52de4257fab3e770f73d5174c12a095b49572fba/jemalloc-sys/build.rs#L26-L27
+[target.'cfg(any(target_os = "openbsd", target_env = "msvc"))'.dependencies.rocksdb]
+default-features = false
+features = ["snappy"]
+git = "https://github.com/rongma7/rust-rocksdb"
+rev = "f74f0c8e9040ea43ad38f4df78d3ec184e126e1b"
+
+[target.'cfg(not(any(target_os = "openbsd", target_env = "msvc")))'.dependencies.rocksdb]
+default-features = false
+features = ["snappy", "jemalloc"]
+git = "https://github.com/rongma7/rust-rocksdb"
+rev = "f74f0c8e9040ea43ad38f4df78d3ec184e126e1b"
+# for storage2 end
 
 [dev-dependencies]
 tempfile = { workspace = true }

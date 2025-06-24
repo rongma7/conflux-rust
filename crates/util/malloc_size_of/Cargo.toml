@@ -13,8 +13,15 @@ slab = { workspace = true }
 parking_lot = { workspace = true }
 smallvec = { workspace = true }
 
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+# for storage
+#[target.'cfg(not(target_env = "msvc"))'.dependencies]
+#tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
+#[features]
+#jemalloc = []
 
+# for storage2
 [features]
-jemalloc = []
+jemalloc-global = ["tikv-jemallocator"]
+[target.'cfg(not(target_env = "msvc"))'.dependencies.tikv-jemallocator]
+version = "0.6"
+optional = true

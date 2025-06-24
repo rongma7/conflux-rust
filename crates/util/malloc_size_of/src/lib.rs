@@ -10,6 +10,10 @@
 
 //! A reduced fork of Firefox's malloc_size_of crate, for bundling with
 //! WebRender.
+// for storage2
+// Note: global_allocator is defined in bins/conflux/src/main.rs via cfx-mallocator-utils,
+// not here. This crate only needs the jemalloc-global feature flag for conditional compilation.
+
 use cfg_if::cfg_if;
 use cfx_types::{
     AddressWithSpace, AllChainID, Space, SpaceMap, H160, H256, H512, U256, U512,
@@ -548,7 +552,7 @@ mod usable_size {
                 HeapSize(heap, 0, ptr) as usize
             }
 
-        } else if #[cfg(feature = "jemalloc")] {
+        } else if #[cfg(feature = "jemalloc-global")] {
 
             /// Use of jemalloc usable size C function through jemallocator crate call.
             pub unsafe extern "C" fn malloc_usable_size(ptr: *const c_void) -> usize {

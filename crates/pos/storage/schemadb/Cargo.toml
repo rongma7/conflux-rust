@@ -14,7 +14,21 @@ anyhow = "1.0.38"
 once_cell = "1.7.2"
 diem-logger = { workspace = true }
 diem-metrics = { workspace = true }
-rocksdb = { workspace = true }
+#rocksdb = { workspace = true }
+
+# OpenBSD and MSVC are unteested and shouldn't enable jemalloc:
+# https://github.com/tikv/jemallocator/blob/52de4257fab3e770f73d5174c12a095b49572fba/jemalloc-sys/build.rs#L26-L27
+[target.'cfg(any(target_os = "openbsd", target_env = "msvc"))'.dependencies.rocksdb]
+default-features = false
+features = ["snappy"]
+git = "https://github.com/rongma7/rust-rocksdb"
+rev = "f74f0c8e9040ea43ad38f4df78d3ec184e126e1b"
+
+[target.'cfg(not(any(target_os = "openbsd", target_env = "msvc")))'.dependencies.rocksdb]
+default-features = false
+features = ["snappy", "jemalloc"]
+git = "https://github.com/rongma7/rust-rocksdb"
+rev = "f74f0c8e9040ea43ad38f4df78d3ec184e126e1b"
 
 [dev-dependencies]
 byteorder = "1.4.3"

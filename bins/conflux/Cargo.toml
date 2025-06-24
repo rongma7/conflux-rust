@@ -44,12 +44,18 @@ cfx-execute-helper = { workspace = true }
 cfx-mallocator-utils = { workspace = true }
 libc = { workspace = true }
 
-# [target.'cfg(not(target_env = "msvc"))'.dependencies]
-# tikv-jemallocator = { workspace = true }
+# for storage2
+[target.'cfg(not(target_env = "msvc"))'.dependencies.tikv-jemallocator]
+version = "0.6"
+optional = true
 
 [features]
 default = ["jemalloc-global"]
 deadlock-detection = ["parking_lot/deadlock_detection"]
+
+# for storage2
+jemalloc-global = ["tikv-jemallocator", "malloc_size_of/jemalloc-global"]
+
 u64-mpt-db-key = ["client/u64_mpt_db_key"]
 # According to Rust's feature unification, when a feature is enabled for a dependency in the root package,
 # it will be enabled across all paths depending on that package. 
@@ -57,7 +63,8 @@ u64-mpt-db-key = ["client/u64_mpt_db_key"]
 blst-portable = ["bls-signatures/blst-portable"]
 align_evm = ["cfx-executor/align_evm", "cfx-execute-helper/align_evm"]
 # mallocator related features
-jemalloc-global = ["malloc_size_of/jemalloc", "cfx-mallocator-utils/jemalloc"]
+# for storage
+#jemalloc-global = ["malloc_size_of/jemalloc", "cfx-mallocator-utils/jemalloc"]
 jemalloc-prof = ["cfx-mallocator-utils/jemalloc", "cfx-mallocator-utils/jemalloc-prof"]
 tracy-allocator = ["cfx-mallocator-utils/tracy-allocator"]
 # Because jemalloc is default and preferred over snmalloc when both features are
