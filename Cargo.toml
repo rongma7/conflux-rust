@@ -30,6 +30,7 @@ members = [
     "crates/parameters",
     "crates/dbs/statedb",
     "crates/dbs/storage",
+    "crates/dbs/storage2",
     "crates/execution/vm-interpreter",
     "crates/execution/vm-types",
     "crates/util/cfx_math",
@@ -175,6 +176,7 @@ db = { path = "./crates/dbs/db" }
 cfx-db-errors = { path = "./crates/dbs/db-errors" }
 cfx-statedb = { path = "./crates/dbs/statedb" }
 cfx-storage = { path = "./crates/dbs/storage" }
+storage2 = { path = "crates/dbs/storage2" }
 kvdb-rocksdb = { path = "./crates/dbs/kvdb-rocksdb" }
 cfx-addr = { path = "./crates/cfx_addr" }
 cfxcore-accounts = { path = "./crates/accounts" }
@@ -451,7 +453,7 @@ sqlite3-sys = "0.12"
 kvdb = "0.4"
 influx_db_client = "0.5.1"
 # conflux forked crates
-rocksdb = { git = "https://github.com/Conflux-Chain/rust-rocksdb.git", rev = "7dbd66f507db1d0cfdf5334ad56ca0b24a768740" }
+#rocksdb = { git = "https://github.com/Conflux-Chain/rust-rocksdb.git", rev = "7dbd66f507db1d0cfdf5334ad56ca0b24a768740" }
 
 [patch.crates-io]
 sqlite3-sys = { git = "https://github.com/Conflux-Chain/sqlite3-sys.git", rev = "1de8e5998f7c2d919336660b8ef4e8f52ac43844" }
