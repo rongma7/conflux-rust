@@ -84,7 +84,7 @@ impl TestDB {
         let tmpdir = diem_temppath::TempPath::new();
         let column_families =
             vec![DEFAULT_CF_NAME, TestSchema::COLUMN_FAMILY_NAME];
-        let mut db_opts = rocksdb::DBOptions::default();
+        let mut db_opts = rocksdb::Options::default();
         db_opts.create_if_missing(true);
         db_opts.create_missing_column_families(true);
         let db =
