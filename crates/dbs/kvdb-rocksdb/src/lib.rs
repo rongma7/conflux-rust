@@ -22,8 +22,7 @@ use std::{cmp, collections::HashMap, error, fs, io, mem, path::Path, result};
 
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rocksdb::{
-    BlockBasedOptions, CFHandle, ColumnFamilyOptions, DBOptions, ReadOptions,
-    Writable, WriteBatch, WriteOptions, DB,
+    BlockBasedIndexType, BlockBasedOptions, ColumnFamily, ColumnFamilyDescriptor, Options, ReadOptions, WriteBatch, WriteOptions, DB
 };
 
 use fs_swap::{swap, swap_nonatomic};
@@ -212,14 +211,14 @@ struct DBAndColumns {
 }
 
 impl DBAndColumns {
-    fn get_cf(&self, i: usize) -> &CFHandle {
+    fn get_cf(&self, i: usize) -> &ColumnFamily {
         self.db
             .cf_handle(&self.column_names[i])
             .expect("the specified column name is correct; qed")
     }
 
     fn static_property_or_warn(&self, col: usize, prop: &str) -> Option<usize> {
-        match self.db.get_property_int_cf(self.get_cf(col), prop) {
+        match self.db.property_int_value_cf(self.get_cf(col), prop).ok().flatten() {
             Some(v) => Some(v as usize),
             None => {
                 warn!("Cannot read expected static property of RocksDb database: {}", prop);
@@ -254,15 +253,16 @@ impl MallocSizeOf for DBAndColumns {
 // get column family configuration from database config.
 fn col_config(
     config: &DatabaseConfig, block_opts: &BlockBasedOptions,
-) -> io::Result<ColumnFamilyOptions> {
-    let mut opts = ColumnFamilyOptions::default();
+) -> io::Result<Options> {
+    let mut opts = Options::default();
 
     opts.set_level_compaction_dynamic_level_bytes(true);
     opts.set_block_based_table_factory(block_opts);
-    opts.optimize_level_style_compaction(config.memory_budget_per_col() as i32);
+    opts.optimize_level_style_compaction(config.memory_budget_per_col());
     opts.set_target_file_size_base(config.compaction.initial_file_size);
-    opts.set_write_buffer_size(config.memory_budget_per_col() as u64 / 2);
-    opts.set_block_cache_size_mb(config.memory_budget_mb() as u64 / 3);
+    opts.set_compression_per_level(&[]);
+    opts.set_write_buffer_size(config.memory_budget_per_col() / 2);
+    // opts.set_block_cache_size_mb(config.memory_budget_mb() as u64 / 3); // set in open()
 
     Ok(opts)
 }
@@ -323,8 +323,8 @@ fn is_corrupted(err: &DBError) -> bool {
 }
 
 /// Generate the options for RocksDB, based on the given `DatabaseConfig`.
-fn generate_options(config: &DatabaseConfig) -> DBOptions {
-    let mut opts = DBOptions::default();
+fn generate_options(config: &DatabaseConfig) -> Options {
+    let mut opts = Options::default();
 
     //TODO: rate_limiter_bytes_per_sec={} was removed
 
@@ -334,7 +334,7 @@ fn generate_options(config: &DatabaseConfig) -> DBOptions {
     opts.set_bytes_per_sync(1 * MB as u64);
     opts.set_keep_log_file_num(1);
     opts.increase_parallelism(cmp::max(1, num_cpus::get() as i32 / 2));
-    opts.enable_statistics(true);
+    opts.enable_statistics();
     opts.create_missing_column_families(true);
 
     opts
@@ -352,11 +352,22 @@ impl Database {
     pub fn open(config: &DatabaseConfig, path: &str) -> io::Result<Database> {
         let mut block_opts = BlockBasedOptions::default();
         block_opts.set_block_size(config.compaction.block_size);
+        // See https://github.com/facebook/rocksdb/blob/a1523efcdf2f0e8133b9a9f6e170a0dad49f928f/include/rocksdb/table.h#L246-L271 for details on what the format versions are/do.
+        block_opts.set_format_version(5);
+        block_opts.set_block_restart_interval(16);
         // Set cache size as recommended by
         // https://github.com/facebook/rocksdb/wiki/Setup-Options-and-Basic-Tuning#block-cache-size
+        // https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+        let cache_size = config.memory_budget_mb() / 3;
+        block_opts.set_index_type(BlockBasedIndexType::TwoLevelIndexSearch);
+		block_opts.set_partition_filters(true);
+		block_opts.set_metadata_block_size(4096);
         block_opts.set_cache_index_and_filter_blocks(true);
+        block_opts.set_pin_top_level_index_and_filter(true);
         block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
-        block_opts.set_bloom_filter(10, true);
+        let cache = rocksdb::Cache::new_lru_cache(cache_size).map_err(other_io_err)?;
+		block_opts.set_block_cache(&cache);
+        block_opts.set_bloom_filter(10.0, false);
 
         let opts = generate_options(config);
 
@@ -366,7 +377,7 @@ impl Database {
             warn!(
                 "DB has been previously marked as corrupted, attempting repair"
             );
-            DB::repair(opts.clone(), path).map_err(other_io_err)?;
+            DB::repair(&opts, path).map_err(other_io_err)?;
             fs::remove_file(db_corrupted)?;
         }
 
@@ -375,16 +386,15 @@ impl Database {
             return Err(other_io_err("columns number cannot be 0"));
         }
 
-        let mut cf_options = Vec::with_capacity(columns);
         let column_names: Vec<_> =
             (0..columns).map(|c| format!("col{}", c)).collect();
         let cfnames: Vec<&str> =
             column_names.iter().map(|n| n as &str).collect();
 
-        for i in 0..config.columns {
-            cf_options
-                .push((cfnames[i as usize], col_config(&config, &block_opts)?));
-        }
+        let column_config = col_config(&config, &block_opts)?;
+        let cf_options: Vec<_> = (0..config.columns)
+            .map(|i| ColumnFamilyDescriptor::new(cfnames[i as usize], column_config.clone()))
+            .collect();
 
         let mut write_opts = WriteOptions::new();
         write_opts.disable_wal(config.disable_wal);
@@ -392,7 +402,7 @@ impl Database {
         read_opts.set_prefix_same_as_start(true);
         read_opts.set_verify_checksums(false);
 
-        let db = match DB::open_cf(opts.clone(), path, cf_options.clone()) {
+        let db = match DB::open_cf_descriptors(&opts, path, cf_options) {
             Ok(db) => {
                 for name in &cfnames {
                     let _ = db.cf_handle(name).expect(
@@ -404,13 +414,13 @@ impl Database {
             Err(_) => {
                 // retry and create CFs
                 match DB::open_cf(
-                    opts.clone(),
+                    &opts,
                     path,
-                    Vec::<(&str, ColumnFamilyOptions)>::new(),
+                    &[] as &[&str],
                 ) {
                     Ok(mut db) => {
-                        for cfd in &cf_options {
-                            db.create_cf(cfd.clone()).map_err(other_io_err)?;
+                        for (_, name) in cfnames.iter().enumerate() {
+                            db.create_cf(name, &col_config(config, &block_opts)?).map_err(other_io_err)?;
                         }
                         Ok(db)
                     }
@@ -419,12 +429,15 @@ impl Database {
             }
         };
 
+        let cf_options: Vec<_> = (0..config.columns)
+            .map(|i| ColumnFamilyDescriptor::new(cfnames[i as usize], column_config.clone()))
+            .collect();
         let db = match db {
             Ok(db) => db,
-            Err(ref s) if is_corrupted(s) => {
+            Err(ref s) if is_corrupted(&s.to_string()) => {
                 warn!("DB corrupted: {}, attempting repair", s);
-                DB::repair(opts.clone(), path).map_err(other_io_err)?;
-                let db = DB::open_cf(opts, path, cf_options)
+                DB::repair(&opts, path).map_err(other_io_err)?;
+                let db = DB::open_cf_descriptors(&opts, path, cf_options)
                     .map_err(other_io_err)?;
                 for name in cfnames {
                     let _ = db.cf_handle(name).expect(
@@ -478,7 +491,7 @@ impl Database {
     ) -> io::Result<()> {
         match *self.db.read() {
             Some(ref cfs) => {
-                let batch = WriteBatch::default();
+                let mut batch = WriteBatch::default();
                 mem::swap(
                     &mut *self.overlay.write(),
                     &mut *self.flushing.write(),
@@ -490,14 +503,12 @@ impl Database {
                                 KeyState::Delete => {
                                     let cf = cfs.get_cf(c);
                                     batch
-                                        .delete_cf(cf, key)
-                                        .map_err(other_io_err)?;
+                                        .delete_cf(cf, key);
                                 }
                                 KeyState::Insert(ref value) => {
                                     let cf = cfs.get_cf(c);
                                     batch
-                                        .put_cf(cf, key, value)
-                                        .map_err(other_io_err)?;
+                                        .put_cf(cf, key, value);
                                 }
                             }
                         }
@@ -506,7 +517,7 @@ impl Database {
 
                 check_for_corruption(
                     &self.path,
-                    cfs.db.write_opt(&batch, &self.write_opts),
+                    cfs.db.write_opt(batch, &self.write_opts).map_err(|e| e.to_string()),
                 )?;
 
                 for column in self.flushing.write().iter_mut() {
@@ -542,7 +553,7 @@ impl Database {
     pub fn write(&self, tr: DBTransaction) -> io::Result<()> {
         match *self.db.read() {
             Some(ref cfs) => {
-                let batch = WriteBatch::default();
+                let mut batch = WriteBatch::default();
                 let ops = tr.ops;
                 for op in ops {
                     // remove any buffered operation for this key
@@ -550,17 +561,15 @@ impl Database {
 
                     match op {
                         DBOp::Insert { col, key, value } => batch
-                            .put_cf(cfs.get_cf(col as usize), &key, &value)
-                            .map_err(other_io_err)?,
+                            .put_cf(cfs.get_cf(col as usize), &key, &value),
                         DBOp::Delete { col, key } => batch
-                            .delete_cf(cfs.get_cf(col as usize), &key)
-                            .map_err(other_io_err)?,
+                            .delete_cf(cfs.get_cf(col as usize), &key),
                     }
                 }
 
                 check_for_corruption(
                     &self.path,
-                    cfs.db.write_opt(&batch, &self.write_opts),
+                    cfs.db.write_opt(batch, &self.write_opts).map_err(|e| e.to_string()),
                 )
             }
             None => Err(other_io_err("Database is closed")),
@@ -687,10 +696,10 @@ impl Database {
             }) => {
                 let col = column_names.len() as u32;
                 let name = format!("col{}", col);
-                db.create_cf((
+                db.create_cf(
                     name.as_str(),
-                    col_config(&self.config, &self.block_opts)?,
-                ))
+                    &col_config(&self.config, &self.block_opts)?,
+                )
                 .map_err(other_io_err)?;
                 column_names.push(name);
                 Ok(())
