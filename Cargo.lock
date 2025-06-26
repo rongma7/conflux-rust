@@ -1789,7 +1789,7 @@ dependencies = [
 [[package]]
 name = "cfx-storage2"
 version = "0.1.0"
-source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=95433bb#95433bb32bac7e443b60143a77e0f65f88befcce"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=f74eaf2#f74eaf20481220957d06758c65d0cd1c185b8a91"
 dependencies = [
  "amt",
  "ark-bls12-381",
@@ -5333,7 +5333,7 @@ dependencies = [
 [[package]]
 name = "kvdb"
 version = "0.13.0"
-source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=507a6f8#507a6f85677cbda014a6f1057fa919a7e3a933d5"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465#2e60465cc1ec230a6489289211781984cbdadfb7"
 dependencies = [
  "smallvec 1.13.2",
 ]
@@ -5359,7 +5359,7 @@ dependencies = [
 [[package]]
 name = "kvdb-rocksdb"
 version = "0.17.0"
-source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=507a6f8#507a6f85677cbda014a6f1057fa919a7e3a933d5"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465#2e60465cc1ec230a6489289211781984cbdadfb7"
 dependencies = [
  "kvdb 0.13.0",
  "num_cpus",
@@ -5451,7 +5451,7 @@ checksum = "348108ab3fba42ec82ff6e9564fc4ca0247bdccdc68dd8af9764bbc79c3c8ffb"
 [[package]]
 name = "librocksdb-sys"
 version = "0.8.0+7.4.4"
-source = "git+https://github.com/rongma7/rust-rocksdb?rev=f4cbe0b#f4cbe0b11f3698638079915de52ac555c0120239"
+source = "git+https://github.com/rongma7/rust-rocksdb?rev=9183fa9#9183fa90ad9f2b477c972d996ae7fbd047025462"
 dependencies = [
  "bindgen",
  "bzip2-sys",
@@ -7588,7 +7588,7 @@ dependencies = [
 [[package]]
 name = "rocksdb"
 version = "0.19.0"
-source = "git+https://github.com/rongma7/rust-rocksdb?rev=f4cbe0b#f4cbe0b11f3698638079915de52ac555c0120239"
+source = "git+https://github.com/rongma7/rust-rocksdb?rev=9183fa9#9183fa90ad9f2b477c972d996ae7fbd047025462"
 dependencies = [
  "libc",
  "librocksdb-sys",
@@ -7890,6 +7890,7 @@ dependencies = [
  "diem-temppath",
  "once_cell",
  "proptest",
+ "rocksdb",
 ]
 
 [[package]]
