@@ -16,7 +16,7 @@ members = [
     "crates/cfx_key",
     "crates/cfx_store",
     "crates/dbs/db",
-    "crates/dbs/kvdb-rocksdb",
+    "crates/dbs/cfx-kvdb-rocksdb",
     "crates/dbs/db-errors",
     "crates/network",
     "crates/primitives",
@@ -177,7 +177,8 @@ db = { path = "./crates/dbs/db" }
 cfx-db-errors = { path = "./crates/dbs/db-errors" }
 cfx-statedb = { path = "./crates/dbs/statedb" }
 cfx-storage = { path = "./crates/dbs/storage" }
-kvdb-rocksdb = { path = "./crates/dbs/kvdb-rocksdb" }
+storage2 = { path = "crates/dbs/storage2" }
+cfx-kvdb-rocksdb = { path = "./crates/dbs/cfx-kvdb-rocksdb" }
 cfx-addr = { path = "./crates/cfx_addr" }
 cfxcore-accounts = { path = "./crates/accounts" }
 secret-store = { path = "./crates/secret_store" }

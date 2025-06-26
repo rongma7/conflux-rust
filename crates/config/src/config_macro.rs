@@ -33,7 +33,7 @@ macro_rules! build_config{
         use clap;
         use cfxcore::db::NUM_COLUMNS;
         use db;
-        use kvdb_rocksdb::DatabaseConfig;
+        use cfx_kvdb_rocksdb::DatabaseConfig;
         use log::LevelFilter;
         use network::{node_table::validate_node_url, NetworkConfiguration};
         use std::{

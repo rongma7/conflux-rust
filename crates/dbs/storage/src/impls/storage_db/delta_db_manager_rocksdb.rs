@@ -92,7 +92,7 @@ use super::{
     },
     kvdb_rocksdb::KvdbRocksdb,
 };
-use kvdb_rocksdb::{CompactionProfile, Database, DatabaseConfig};
+use cfx_kvdb_rocksdb::{CompactionProfile, Database, DatabaseConfig};
 use parking_lot::Mutex;
 use primitives::EpochId;
 use rustc_hex::ToHex;

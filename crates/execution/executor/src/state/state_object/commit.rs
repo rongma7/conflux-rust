@@ -5,6 +5,7 @@ use cfx_internal_common::{
     debug::ComputeEpochDebugRecord, StateRootWithAuxInfo,
 };
 use cfx_statedb::{access_mode, Result as DbResult};
+use cfx_storage::{Database, DatabaseTrait};
 use cfx_types::AddressWithSpace;
 use primitives::{Account, EpochId, StorageKey};
 
@@ -18,12 +19,14 @@ impl State {
     pub fn commit(
         mut self, epoch_id: EpochId,
         mut debug_record: Option<&mut ComputeEpochDebugRecord>,
+        write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> DbResult<StateCommitResult> {
         debug!("Commit epoch[{}]", epoch_id);
 
         let accounts_for_txpool =
             self.apply_changes_to_statedb(debug_record.as_deref_mut())?;
-        let state_root = self.db.commit(epoch_id, debug_record)?;
+        let state_root =
+            self.db.commit(epoch_id, debug_record, write_schema)?;
         Ok(StateCommitResult {
             state_root,
             accounts_for_txpool,
@@ -140,7 +143,7 @@ impl State {
     #[cfg(test)]
     pub fn commit_for_test(&mut self, epoch_id: EpochId) -> DbResult<()> {
         self.apply_changes_to_statedb(None)?;
-        self.db.commit(epoch_id, None)?;
+        self.db.commit(epoch_id, None, &Database::write_schema())?;
         Ok(())
     }
 }

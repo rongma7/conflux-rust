@@ -18,7 +18,7 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-use kvdb_rocksdb::{CompactionProfile, Database, DatabaseConfig};
+use cfx_kvdb_rocksdb::{CompactionProfile, Database, DatabaseConfig};
 use std::{io, path::Path, str::FromStr, sync::Arc};
 
 pub struct SystemDB {

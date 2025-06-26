@@ -14,6 +14,7 @@ use cfx_parameters::{
     internal_contract_addresses::STORAGE_INTEREST_STAKING_CONTRACT_ADDRESS,
     staking::*,
 };
+use cfx_storage::{Database, DatabaseTrait};
 use cfx_types::{
     address_util::AddressUtil, Address, AddressSpaceUtil, BigEndianHash, U256,
     U512,
@@ -987,7 +988,9 @@ fn test_commission_privilege_all_whitelisted_across_epochs() {
         .unwrap();
     state.discard_checkpoint();
     let mut debug_record = ComputeEpochDebugRecord::default();
-    state.commit(epoch_id, Some(&mut debug_record)).unwrap();
+    state
+        .commit(epoch_id, Some(&mut debug_record), &Database::write_schema())
+        .unwrap();
     debug!("{:?}", debug_record);
 
     let mut state = get_state_by_epoch_id(&epoch_id);
