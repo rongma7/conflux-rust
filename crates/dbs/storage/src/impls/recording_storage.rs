@@ -53,7 +53,7 @@ impl<Storage: StateTrait + StateTraitExt> StateTrait
             fn delete_test_only(&mut self, access_key: StorageKeyWithSpace) -> Result<Option<Box<[u8]>>>;
             fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo>;
             fn get_state_root(&self) -> Result<StateRootWithAuxInfo>;
-            fn commit(&mut self, epoch_id: EpochId) -> Result<StateRootWithAuxInfo>;
+            fn commit(&mut self, epoch_id: EpochId, _write_schema: &<Database as DatabaseTrait>::WriteSchema) -> Result<StateRootWithAuxInfo>;
         }
     }
 
@@ -102,3 +102,4 @@ use cfx_internal_common::StateRootWithAuxInfo;
 use delegate::delegate;
 use parking_lot::Mutex;
 use primitives::{CheckInput, EpochId, StorageKeyWithSpace};
+use storage2::{Database, DatabaseTrait};

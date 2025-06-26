@@ -327,6 +327,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "amt"
+version = "0.1.0"
+source = "git+https://github.com/Conflux-Chain/amt?rev=387995a#387995acb0e0f214e8dce7a937372020efee82e7"
+dependencies = [
+ "anyhow",
+ "ark-bls12-381",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-poly",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "base64 0.22.1",
+ "error-chain",
+ "once_cell",
+ "rand 0.8.5",
+ "rayon",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -425,6 +447,51 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69f7f8c3906b62b754cd5326047894316021dcfe5a194c8ea52bdd94934a3457"
 
 [[package]]
+name = "ark-bls12-381"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3df4dcc01ff89867cd86b0da835f23c3f02738353aaee7dde7495af71363b8d5"
+dependencies = [
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+]
+
+[[package]]
+name = "ark-bn254"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d69eab57e8d2663efa5c63135b2af4f396d66424f88954c21104125ab6b3e6bc"
+dependencies = [
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-std 0.5.0",
+]
+
+[[package]]
+name = "ark-ec"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43d68f2d516162846c1238e755a7c4d131b892b70cc70c471a8e3ca3ed818fce"
+dependencies = [
+ "ahash 0.8.12",
+ "ark-ff 0.5.0",
+ "ark-poly",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "educe",
+ "fnv",
+ "hashbrown 0.15.4",
+ "itertools 0.13.0",
+ "num-bigint 0.4.6",
+ "num-integer",
+ "num-traits",
+ "rayon",
+ "zeroize",
+]
+
+[[package]]
 name = "ark-ff"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -463,6 +530,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-ff"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a177aba0ed1e0fbb62aa9f6d0502e9b46dad8c2eab04c14258a1212d2557ea70"
+dependencies = [
+ "ark-ff-asm 0.5.0",
+ "ark-ff-macros 0.5.0",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "arrayvec 0.7.6",
+ "digest 0.10.7",
+ "educe",
+ "itertools 0.13.0",
+ "num-bigint 0.4.6",
+ "num-traits",
+ "paste",
+ "rayon",
+ "zeroize",
+]
+
+[[package]]
 name = "ark-ff-asm"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -480,6 +568,16 @@ checksum = "3ed4aa4fe255d0bc6d79373f7e31d2ea147bcf486cba1be5ba7ea85abdb92348"
 dependencies = [
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "ark-ff-asm"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62945a2f7e6de02a31fe400aa489f0e0f5b2502e69f95f853adb82a96c7a6b60"
+dependencies = [
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]
@@ -508,6 +606,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-ff-macros"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09be120733ee33f7693ceaa202ca41accd5653b779563608f1234f78ae07c4b3"
+dependencies = [
+ "num-bigint 0.4.6",
+ "num-traits",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
+name = "ark-poly"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "579305839da207f02b89cd1679e50e67b4331e2f9294a57693e5051b7703fe27"
+dependencies = [
+ "ahash 0.8.12",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "educe",
+ "fnv",
+ "hashbrown 0.15.4",
+ "rayon",
+]
+
+[[package]]
 name = "ark-serialize"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -529,6 +656,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-serialize"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f4d068aaf107ebcd7dfb52bc748f8030e0fc930ac8e360146ca54c1203088f7"
+dependencies = [
+ "ark-serialize-derive",
+ "ark-std 0.5.0",
+ "arrayvec 0.7.6",
+ "digest 0.10.7",
+ "num-bigint 0.4.6",
+ "rayon",
+]
+
+[[package]]
+name = "ark-serialize-derive"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "213888f660fddcca0d257e88e54ac05bca01885f258ccdf695bafd77031bb69d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "ark-std"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -546,6 +698,17 @@ checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "ark-std"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
+dependencies = [
+ "num-traits",
+ "rand 0.8.5",
+ "rayon",
 ]
 
 [[package]]
@@ -845,6 +1008,15 @@ dependencies = [
  "radium 0.7.0",
  "tap",
  "wyz 0.5.1",
+]
+
+[[package]]
+name = "blake2"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46502ad458c9a52b69d4d4d32775c788b7a1b85e8bc9d482d92250fc0e3f8efe"
+dependencies = [
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -1167,6 +1339,7 @@ dependencies = [
  "cfx-addr",
  "cfx-executor",
  "cfx-internal-common",
+ "cfx-kvdb-rocksdb",
  "cfx-parameters",
  "cfx-rpc-builder",
  "cfx-rpc-cfx-types",
@@ -1177,7 +1350,6 @@ dependencies = [
  "db",
  "diem-types",
  "jsonrpc-http-server",
- "kvdb-rocksdb",
  "lazy_static",
  "log",
  "metrics",
@@ -1285,6 +1457,24 @@ dependencies = [
  "serde",
  "serde_derive",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "cfx-kvdb-rocksdb"
+version = "0.1.6"
+dependencies = [
+ "cfx-types",
+ "fs-swap",
+ "kvdb 0.4.0",
+ "log",
+ "malloc_size_of",
+ "malloc_size_of_derive",
+ "num_cpus",
+ "parity-util-mem",
+ "parking_lot 0.12.4",
+ "regex",
+ "rocksdb",
+ "tempfile",
 ]
 
 [[package]]
@@ -1577,6 +1767,7 @@ dependencies = [
  "cfg-if 1.0.1",
  "cfx-db-errors",
  "cfx-internal-common",
+ "cfx-kvdb-rocksdb",
  "cfx-types",
  "cfx-util-macros",
  "delegate 0.5.2",
@@ -1586,8 +1777,7 @@ dependencies = [
  "futures 0.3.31",
  "hashbrown 0.7.2",
  "keccak-hash",
- "kvdb",
- "kvdb-rocksdb",
+ "kvdb 0.4.0",
  "lazy_static",
  "log",
  "log4rs",
@@ -1606,8 +1796,35 @@ dependencies = [
  "serde",
  "sqlite",
  "sqlite3-sys",
+ "storage2",
  "strfmt",
  "tokio",
+]
+
+[[package]]
+name = "cfx-storage2"
+version = "0.1.0"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=e776bfd#e776bfd208ebffaec10e833b86195ea127946b48"
+dependencies = [
+ "amt",
+ "ark-bls12-381",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-poly",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "auto_impl",
+ "blake2",
+ "ethereum-types 0.9.2",
+ "itertools 0.13.0",
+ "kvdb 0.13.0",
+ "kvdb-rocksdb",
+ "parking_lot 0.12.4",
+ "proptest",
+ "slab",
+ "static_assertions",
+ "thiserror 1.0.69",
+ "tinyvec",
 ]
 
 [[package]]
@@ -1751,7 +1968,7 @@ dependencies = [
  "jsonrpc-core",
  "jsonrpsee",
  "keccak-hash",
- "kvdb",
+ "kvdb 0.4.0",
  "lazy_static",
  "link-cut-tree",
  "log",
@@ -2555,7 +2772,7 @@ dependencies = [
 name = "db"
 version = "0.1.0"
 dependencies = [
- "kvdb-rocksdb",
+ "cfx-kvdb-rocksdb",
  "log",
 ]
 
@@ -3101,6 +3318,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3f497e87b038c09a155dfd169faa5ec940d0644635555ef6bd464ac20e97397"
 
 [[package]]
+name = "educe"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d7bc049e1bd8cdeb31b68bbd586a9464ecf9f3944af3958a7a9d0f8b9799417"
+dependencies = [
+ "enum-ordinalize",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "eest_types"
 version = "3.0.0-net8888"
 dependencies = [
@@ -3175,6 +3404,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum-ordinalize"
+version = "4.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fea0dcfa4e54eeb516fe454635a95753ddd39acda650ce703031c6973e315dd5"
+dependencies = [
+ "enum-ordinalize-derive",
+]
+
+[[package]]
+name = "enum-ordinalize-derive"
+version = "4.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d28318a75d4aead5c4db25382e8ef717932d0346600cacae6357eb5941bc5ff"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "enum_dispatch"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3243,6 +3492,15 @@ checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "error-chain"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d2f06b9cac1506ece98fe3231e3cc9c4410ec3d5b1f24ae1c8946f0742cdefc"
+dependencies = [
+ "version_check",
 ]
 
 [[package]]
@@ -3937,6 +4195,9 @@ name = "hashbrown"
 version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
+dependencies = [
+ "allocator-api2",
+]
 
 [[package]]
 name = "hdrhistogram"
@@ -4646,6 +4907,15 @@ dependencies = [
 
 [[package]]
 name = "itertools"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
@@ -5048,21 +5318,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "kvdb-rocksdb"
-version = "0.1.6"
+name = "kvdb"
+version = "0.13.0"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465#2e60465cc1ec230a6489289211781984cbdadfb7"
 dependencies = [
- "cfx-types",
- "fs-swap",
- "kvdb",
- "log",
- "malloc_size_of",
- "malloc_size_of_derive",
+ "smallvec 1.15.1",
+]
+
+[[package]]
+name = "kvdb-rocksdb"
+version = "0.17.0"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465#2e60465cc1ec230a6489289211781984cbdadfb7"
+dependencies = [
+ "kvdb 0.13.0",
  "num_cpus",
- "parity-util-mem",
  "parking_lot 0.12.4",
  "regex",
  "rocksdb",
- "tempfile",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -5222,7 +5495,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "db",
- "kvdb",
+ "kvdb 0.4.0",
  "parking_lot 0.12.4",
  "rand 0.9.2",
  "rlp 0.4.6",
@@ -8236,6 +8509,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "storage2"
+version = "1.0.0"
+dependencies = [
+ "amt",
+ "ark-bls12-381",
+ "cfx-db-errors",
+ "cfx-internal-common",
+ "cfx-storage2",
+ "cfx-types",
+ "ethereum-types 0.9.2",
+ "kvdb-rocksdb",
+ "malloc_size_of",
+ "malloc_size_of_derive",
+ "once_cell",
+ "parking_lot 0.12.4",
+ "primitives",
+ "tiny-keccak 2.0.2",
+]
+
+[[package]]
 name = "strfmt"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8649,6 +8942,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "tinyvec"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09b3661f17e86524eccd4371ab0429194e0d7c008abb45f7a7495b1719463c71"
 
 [[package]]
 name = "tokio"

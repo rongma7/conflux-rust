@@ -26,6 +26,8 @@ pub mod tests;
 
 mod impls;
 
+pub use storage2::{Database, DatabaseTrait};
+
 pub mod storage_dir {
     use std::path::PathBuf;
     lazy_static! {
@@ -218,16 +220,12 @@ pub use self::{
         },
     },
     replicated_state::ReplicatedState,
-    state::{
-        State as StorageState, StateTrait as StorageStateTrait,
-        StateTraitExt as StorageStateTraitExt,
-    },
-    state_manager::{
-        StateIndex, StateManager as StorageManager,
-        StateManagerTrait as StorageManagerTrait,
-    },
+    state::{State as StorageState, StateTraitExt as StorageStateTraitExt},
+    state_manager::StateManager as StorageManager,
     storage_db::KeyValueDbTrait,
 };
+
+pub use storage2::{StateIndex, StorageManagerTrait, StorageStateTrait};
 
 #[cfg(any(test, feature = "testonly_code"))]
 pub use self::tests::new_state_manager_for_unit_test as new_storage_manager_for_testing;
