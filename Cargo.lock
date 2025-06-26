@@ -1789,7 +1789,7 @@ dependencies = [
 [[package]]
 name = "cfx-storage2"
 version = "0.1.0"
-source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=f74eaf2#f74eaf20481220957d06758c65d0cd1c185b8a91"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=23750d2#23750d2088454c70cbe4de641c041af1df4a2b68"
 dependencies = [
  "amt",
  "ark-bls12-381",
@@ -1800,7 +1800,7 @@ dependencies = [
  "ark-std 0.5.0",
  "auto_impl",
  "blake2",
- "ethereum-types 0.12.1",
+ "ethereum-types 0.9.2",
  "itertools 0.13.0",
  "kvdb 0.13.0",
  "kvdb-rocksdb 0.17.0",
@@ -8519,7 +8519,18 @@ dependencies = [
 name = "storage2"
 version = "1.0.0"
 dependencies = [
+ "amt",
+ "ark-bls12-381",
+ "cfx-internal-common",
+ "cfx-storage",
  "cfx-storage2",
+ "cfx-types",
+ "ethereum-types 0.9.2",
+ "kvdb-rocksdb 0.17.0",
+ "once_cell",
+ "parking_lot 0.12.1",
+ "primitives",
+ "tiny-keccak 2.0.2",
 ]
 
 [[package]]
