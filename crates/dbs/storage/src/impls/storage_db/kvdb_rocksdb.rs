@@ -137,8 +137,8 @@ use super::super::{
     super::storage_db::{delta_db_manager::DeltaDbTrait, key_value_db::*},
     errors::*,
 };
+use cfx_kvdb_rocksdb::Database;
 use kvdb::DBTransaction;
-use kvdb_rocksdb::Database;
 use malloc_size_of_derive::MallocSizeOf as MallocSizeOfDerive;
 use random_crash::random_crash_if_enabled;
 use std::{any::Any, sync::Arc};

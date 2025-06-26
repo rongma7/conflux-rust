@@ -155,6 +155,13 @@ pub struct NodeMerkleTriplet {
 
 pub type StorageRoot = NodeMerkleTriplet;
 
+// #[derive(Clone, Debug, RlpEncodable, RlpDecodable, Serialize)]
+// pub struct NodeMerkleLvmt {
+//     pub inner: Option<H256>,
+// }
+
+// pub type StorageRoot = NodeMerkleLvmt;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum StorageLayout {
     Regular(u8), // type: 0, fields: version
