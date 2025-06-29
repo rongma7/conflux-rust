@@ -10,7 +10,7 @@ use cfx_storage2::{
     backends::{
         DatabaseTrait, TableName, TableReader, TableSchema, WriteSchemaTrait,
     },
-    LvmtSnapshot, LvmtStore,
+    LvmtStore,
 };
 use cfx_types::Space;
 use ethereum_types::H256;
@@ -145,9 +145,12 @@ impl StorageStateTrait for LvmtState {
         // no need to write to changes, since changes only includes writings,
         // i.e., changes is not a cache
         if let Some(view) = &self.base_state {
-            Ok(view
-                .state
-                .get(&key)
+            let epoch_id = view.epoch_id;
+            Ok(self
+                .backend
+                .lock()
+                .data
+                .get(epoch_id, key)
                 .map_err(|_| Error::Msg("Fail to get from LvmtStore".into()))?
                 .map(|v| v.get_value())
                 .flatten())
@@ -272,19 +275,9 @@ impl StorageManagerTrait for LvmtStateManager {
         }
 
         if let Some(state_root) = maybe_state_root {
-            let state = self
-                .backend
-                .lock()
-                .data
-                .get_state(epoch_id.epoch_id)
-                .map_err(|_| {
-                Error::Msg("Fail to get LvmtSnapshot from LvmtStore".into())
-            })?;
-
             Ok(Some(Box::new(LvmtState {
                 backend: self.backend.clone(),
                 base_state: Some(LvmtView {
-                    state,
                     epoch_id: epoch_id.epoch_id,
                 }),
                 changes: None,
@@ -300,19 +293,9 @@ impl StorageManagerTrait for LvmtStateManager {
         self: &Arc<Self>, parent_epoch_id: StateIndex,
         _recover_mpt_during_construct_pivot_state: bool,
     ) -> Result<Option<Box<dyn StorageStateTrait>>> {
-        let state = self
-            .backend
-            .lock()
-            .data
-            .get_state(parent_epoch_id.epoch_id)
-            .map_err(|_| {
-                Error::Msg("Fail to get LvmtSnapshot from LvmtStore".into())
-            })?;
-
         Ok(Some(Box::new(LvmtState {
             backend: self.backend.clone(),
             base_state: Some(LvmtView {
-                state,
                 epoch_id: parent_epoch_id.epoch_id,
             }),
             changes: Some(HashMap::new()),
