@@ -19,7 +19,7 @@ futures = { workspace = true, features = ["compat"] }
 hashbrown = { workspace = true }
 keccak-hash = { workspace = true }
 kvdb = { workspace = true }
-kvdb-rocksdb = { workspace = true }
+cfx-kvdb-rocksdb = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true, features = ["background_rotation", "gzip"] }

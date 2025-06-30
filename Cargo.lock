@@ -1347,6 +1347,7 @@ dependencies = [
  "cfx-addr",
  "cfx-executor",
  "cfx-internal-common",
+ "cfx-kvdb-rocksdb",
  "cfx-parameters",
  "cfx-rpc-builder",
  "cfx-rpc-cfx-types",
@@ -1357,7 +1358,6 @@ dependencies = [
  "db",
  "diem-types",
  "jsonrpc-http-server",
- "kvdb-rocksdb 0.1.6",
  "lazy_static",
  "log",
  "metrics",
@@ -1465,6 +1465,24 @@ dependencies = [
  "serde",
  "serde_derive",
  "toml",
+]
+
+[[package]]
+name = "cfx-kvdb-rocksdb"
+version = "0.1.6"
+dependencies = [
+ "cfx-types",
+ "fs-swap",
+ "kvdb 0.4.0",
+ "log",
+ "malloc_size_of",
+ "malloc_size_of_derive",
+ "num_cpus",
+ "parity-util-mem",
+ "parking_lot 0.12.1",
+ "regex",
+ "rocksdb",
+ "tempfile",
 ]
 
 [[package]]
@@ -1753,6 +1771,7 @@ dependencies = [
  "cfg-if 0.1.10",
  "cfx-db-errors",
  "cfx-internal-common",
+ "cfx-kvdb-rocksdb",
  "cfx-types",
  "cfx-util-macros",
  "delegate 0.5.2",
@@ -1763,7 +1782,6 @@ dependencies = [
  "hashbrown 0.7.2",
  "keccak-hash",
  "kvdb 0.4.0",
- "kvdb-rocksdb 0.1.6",
  "lazy_static",
  "log",
  "log4rs",
@@ -1803,7 +1821,7 @@ dependencies = [
  "ethereum-types 0.9.2",
  "itertools 0.13.0",
  "kvdb 0.13.0",
- "kvdb-rocksdb 0.17.0",
+ "kvdb-rocksdb",
  "parking_lot 0.12.1",
  "proptest",
  "slab",
@@ -2764,7 +2782,7 @@ dependencies = [
 name = "db"
 version = "0.1.0"
 dependencies = [
- "kvdb-rocksdb 0.1.6",
+ "cfx-kvdb-rocksdb",
  "log",
 ]
 
@@ -5336,24 +5354,6 @@ version = "0.13.0"
 source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465#2e60465cc1ec230a6489289211781984cbdadfb7"
 dependencies = [
  "smallvec 1.13.2",
-]
-
-[[package]]
-name = "kvdb-rocksdb"
-version = "0.1.6"
-dependencies = [
- "cfx-types",
- "fs-swap",
- "kvdb 0.4.0",
- "log",
- "malloc_size_of",
- "malloc_size_of_derive",
- "num_cpus",
- "parity-util-mem",
- "parking_lot 0.12.1",
- "regex",
- "rocksdb",
- "tempfile",
 ]
 
 [[package]]
@@ -8526,7 +8526,7 @@ dependencies = [
  "cfx-storage2",
  "cfx-types",
  "ethereum-types 0.9.2",
- "kvdb-rocksdb 0.17.0",
+ "kvdb-rocksdb",
  "once_cell",
  "parking_lot 0.12.1",
  "primitives",
