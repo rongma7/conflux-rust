@@ -76,6 +76,12 @@ pub struct LvmtStateManager {
     backend: Arc<Mutex<LvmtDatabase>>,
 }
 
+impl LvmtStateManager {
+    pub fn new(backend: Arc<Mutex<LvmtDatabase>>) -> Self {
+        Self { backend }
+    }
+}
+
 impl LvmtState {
     fn change(
         &mut self, key: Box<[u8]>, value: Option<Box<[u8]>>,
