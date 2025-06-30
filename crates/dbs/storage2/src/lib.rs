@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
 
 use amt::{AmtParams, CreateMode};
 use cfx_internal_common::StateRootWithAuxInfo;
@@ -57,17 +57,18 @@ pub struct LvmtView {
 
 pub struct LvmtState {
     backend: Arc<Mutex<LvmtDatabase>>,
-    /// `None` for writable LvmtState to create genesis
+    /// `None` for writable LvmtState to create genesis.
     /// `Some()` for read-only LvmtState indicating this epoch_id, or for
-    /// writable LvmtState indicating parent_epoch_id
+    /// writable LvmtState indicating parent_epoch_id.
     base_state: Option<LvmtView>,
-    /// `None` for read-only LvmtState
-    /// `Some()` for writable LvmtState
-    changes: Option<HashMap<Box<[u8]>, Option<Box<[u8]>>>>,
+    /// `changes` only includes writings, `changes` is not a cache.
+    /// `None` for read-only LvmtState.
+    /// `Some()` for writable LvmtState.
+    changes: Option<BTreeMap<Box<[u8]>, Option<Box<[u8]>>>>,
     /// `Some()` only for writable LvmtState after invoking
-    /// compute_state_root()
+    /// compute_state_root().
     cached_state_root: Option<MerkleHash>,
-    /// Information obtained from `StateIndex`
+    /// Information obtained from `StateIndex`.
     delta_trie_key_padding: DeltaMptKeyPadding,
 }
 
@@ -102,12 +103,56 @@ impl LvmtState {
     fn read_all_inner(
         &self, key_prefix: Box<[u8]>,
     ) -> Result<Option<Vec<MptKeyValue>>> {
-        todo!()
+        // get from backend
+        let mut keys_values: BTreeMap<Box<[u8]>, Box<[u8]>> =
+            if let Some(view) = &self.base_state {
+                let epoch_id = view.epoch_id;
+                self.backend
+                    .lock()
+                    .data
+                    .iter_prefix(epoch_id, key_prefix.clone())
+                    .map_err(|_| {
+                        Error::Msg("Err in LvmtStore::iter_prefix".into())
+                    })?
+                    .into_iter()
+                    .map(|(key, lvmt_value)| (key, lvmt_value.get_value()))
+                    .filter(|(_, value)| value.is_some())
+                    .map(|(key, value)| (key, value.unwrap()))
+                    .collect()
+            } else {
+                BTreeMap::new()
+            };
+
+        // get from changes, overwrite directly for the same keys
+        if let Some(changes) = &self.changes {
+            for (key, value) in changes.range(key_prefix.clone()..) {
+                if !key.as_ref().starts_with(key_prefix.as_ref()) {
+                    break;
+                }
+                match value {
+                    Some(existing_value) => {
+                        keys_values.insert(key.clone(), existing_value.clone())
+                    }
+                    None => keys_values.remove(key),
+                };
+            }
+        }
+
+        if keys_values.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(
+                keys_values
+                    .into_iter()
+                    .map(|(key, value)| (key.into_vec(), value))
+                    .collect(),
+            ))
+        }
     }
 
     fn compute_state_root_inner(&mut self) -> Result<MerkleHash> {
         if let Some(ref state_root) = self.cached_state_root {
-            return Ok(*state_root);
+            return Ok(*state_root); // todo: compute again?
         }
 
         let mut x = Keccak::v256();
@@ -142,8 +187,6 @@ impl StorageStateTrait for LvmtState {
         }
 
         // not in changes, then get from backend
-        // no need to write to changes, since changes only includes writings,
-        // i.e., changes is not a cache
         if let Some(view) = &self.base_state {
             let epoch_id = view.epoch_id;
             Ok(self
@@ -203,6 +246,7 @@ impl StorageStateTrait for LvmtState {
     }
 
     /// Gets all existing keys prefixed with access_key_prefix.
+    /// TODO: this Option is for what?
     fn read_all(
         &mut self, access_key_prefix: StorageKeyWithSpace,
     ) -> Result<Option<Vec<MptKeyValue>>> {
@@ -298,7 +342,7 @@ impl StorageManagerTrait for LvmtStateManager {
             base_state: Some(LvmtView {
                 epoch_id: parent_epoch_id.epoch_id,
             }),
-            changes: Some(HashMap::new()),
+            changes: Some(BTreeMap::new()),
             cached_state_root: None,
             delta_trie_key_padding: parent_epoch_id.delta_mpt_key_padding,
         })))
@@ -310,7 +354,7 @@ impl StorageManagerTrait for LvmtStateManager {
         Box::new(LvmtState {
             backend: self.backend.clone(),
             base_state: None,
-            changes: Some(HashMap::new()),
+            changes: Some(BTreeMap::new()),
             cached_state_root: None,
             delta_trie_key_padding: StorageKeyWithSpace::delta_mpt_padding(
                 &MERKLE_NULL_NODE,
