@@ -1,11 +1,19 @@
+pub mod state;
+pub mod state_manager;
+pub use cfx_db_errors::storage as errors;
+pub use errors::{Error, Result};
+
 use std::{borrow::Cow, collections::BTreeMap, sync::Arc};
+
+pub type MptKeyValue = (Vec<u8>, Box<[u8]>);
+pub use state::StateTrait as StorageStateTrait;
+pub use state_manager::{
+    ReplicatedStateManagerTrait, StateIndex,
+    StateManagerTrait as StorageManagerTrait,
+};
 
 use amt::{AmtParams, CreateMode};
 use cfx_internal_common::StateRootWithAuxInfo;
-use cfx_storage::{
-    Error, MptKeyValue, Result, StateIndex, StorageManagerTrait,
-    StorageStateTrait,
-};
 use cfx_storage2::{
     backends::{
         DatabaseTrait, TableName, TableReader, TableSchema, WriteSchemaTrait,
@@ -77,9 +85,7 @@ pub struct LvmtStateManager {
 }
 
 impl LvmtStateManager {
-    pub fn new(backend: Arc<Mutex<LvmtDatabase>>) -> Self {
-        Self { backend }
-    }
+    pub fn new(backend: Arc<Mutex<LvmtDatabase>>) -> Self { Self { backend } }
 }
 
 impl LvmtState {

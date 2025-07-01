@@ -1800,6 +1800,7 @@ dependencies = [
  "serde",
  "sqlite",
  "sqlite3-sys",
+ "storage2",
  "strfmt",
  "tokio",
 ]
@@ -8522,8 +8523,8 @@ version = "1.0.0"
 dependencies = [
  "amt",
  "ark-bls12-381",
+ "cfx-db-errors",
  "cfx-internal-common",
- "cfx-storage",
  "cfx-storage2",
  "cfx-types",
  "ethereum-types 0.9.2",

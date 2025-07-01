@@ -15,38 +15,6 @@ use cfx_types::AddressWithSpace;
 pub type WithProof = primitives::static_bool::Yes;
 pub type NoProof = primitives::static_bool::No;
 
-// The trait is created to separate the implementation to another file, and the
-// concrete struct is put into inner mod, because the implementation is
-// anticipated to be too complex to present in the same file of the API.
-pub trait StateTrait: Sync + Send {
-    // Actions.
-    fn get(&self, access_key: StorageKeyWithSpace)
-        -> Result<Option<Box<[u8]>>>;
-    fn set(
-        &mut self, access_key: StorageKeyWithSpace, value: Box<[u8]>,
-    ) -> Result<()>;
-    fn delete(&mut self, access_key: StorageKeyWithSpace) -> Result<()>;
-    fn delete_test_only(
-        &mut self, access_key: StorageKeyWithSpace,
-    ) -> Result<Option<Box<[u8]>>>;
-    // Delete everything prefixed by access_key and return deleted key value
-    // pairs.
-    fn delete_all(
-        &mut self, access_key_prefix: StorageKeyWithSpace,
-    ) -> Result<Option<Vec<MptKeyValue>>>;
-    // TODO: Remove this mut.
-    fn read_all(
-        &mut self, access_key_prefix: StorageKeyWithSpace,
-    ) -> Result<Option<Vec<MptKeyValue>>>;
-
-    // Finalize
-    /// It's costly to compute state root however it's only necessary to compute
-    /// state root once before committing.
-    fn compute_state_root(&mut self) -> Result<StateRootWithAuxInfo>;
-    fn get_state_root(&self) -> Result<StateRootWithAuxInfo>;
-    fn commit(&mut self, epoch: EpochId) -> Result<StateRootWithAuxInfo>;
-}
-
 pub trait StateTraitExt {
     fn get_with_proof(
         &self, access_key: StorageKeyWithSpace,
@@ -75,13 +43,12 @@ pub trait StateDbGetOriginalMethods {
     ) -> Result<(StorageRoot, StorageRootProof)>;
 }
 
-use super::{
-    impls::{
-        errors::*, node_merkle_proof::NodeMerkleProof, state_proof::StateProof,
-    },
-    MptKeyValue, StateRootWithAuxInfo,
+use super::impls::{
+    errors::*, node_merkle_proof::NodeMerkleProof, state_proof::StateProof,
 };
 use crate::StorageRootProof;
 use primitives::{
-    EpochId, NodeMerkleTriplet, StaticBool, StorageKeyWithSpace, StorageRoot,
+    NodeMerkleTriplet, StaticBool, StorageKeyWithSpace, StorageRoot,
 };
+
+pub use storage2::StorageStateTrait as StateTrait;
