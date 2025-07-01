@@ -11,7 +11,6 @@ use std::{
 
 use rustc_hex::FromHex;
 use serde::{Deserialize, Serialize};
-use storage2::LvmtStateManager;
 use toml::Value;
 
 use crate::keylib::KeyPair;
@@ -26,7 +25,7 @@ use cfx_parameters::{
     staking::POS_VOTE_PRICE,
 };
 use cfx_statedb::StateDb;
-use cfx_storage::StorageManagerTrait;
+use cfx_storage::{StorageManager, StorageManagerTrait};
 use cfx_types::{
     address_util::AddressUtil, Address, AddressSpaceUtil, AddressWithSpace,
     Space, H256, U256,
@@ -119,7 +118,7 @@ pub fn load_secrets_file(
 /// ` test_net_version` is used to update the genesis author so that after
 /// resetting, the chain of the older version will be discarded
 pub fn genesis_block(
-    storage_manager: &Arc<LvmtStateManager>,
+    storage_manager: &Arc<StorageManager>,
     genesis_accounts: HashMap<AddressWithSpace, U256>,
     test_net_version: Address, initial_difficulty: U256, machine: Arc<Machine>,
     need_to_execute: bool, genesis_chain_id: Option<u32>,

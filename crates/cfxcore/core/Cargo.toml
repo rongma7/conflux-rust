@@ -15,7 +15,6 @@ cfx-internal-common = { workspace = true }
 cfx-parameters = { workspace = true }
 cfx-statedb = { workspace = true }
 cfx-storage = { workspace = true }
-storage2 = { workspace = true }
 cfx-types = { workspace = true }
 cfx-vm-types = { workspace = true }
 cfx-executor = { workspace = true }

@@ -2015,7 +2015,6 @@ dependencies = [
  "solidity-abi",
  "static_assertions",
  "storage-interface",
- "storage2",
  "strum",
  "strum_macros",
  "subscription-service",
