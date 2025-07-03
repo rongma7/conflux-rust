@@ -23,7 +23,6 @@ use cfx_storage2::{
 use cfx_types::Space;
 use ethereum_types::H256;
 use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use primitives::{
     DeltaMptKeyPadding, EpochId, MerkleHash, StorageKeyWithSpace,
     MERKLE_NULL_NODE,
@@ -64,7 +63,7 @@ pub struct LvmtView {
 }
 
 pub struct LvmtState {
-    backend: Arc<Mutex<LvmtDatabase>>,
+    manager: Arc<LvmtStateManager>,
     /// `None` for writable LvmtState to create genesis.
     /// `Some()` for read-only LvmtState indicating this epoch_id, or for
     /// writable LvmtState indicating parent_epoch_id.
@@ -81,11 +80,11 @@ pub struct LvmtState {
 }
 
 pub struct LvmtStateManager {
-    backend: Arc<Mutex<LvmtDatabase>>,
+    backend: Arc<LvmtDatabase>,
 }
 
 impl LvmtStateManager {
-    pub fn new(backend: Arc<Mutex<LvmtDatabase>>) -> Self { Self { backend } }
+    pub fn new(backend: Arc<LvmtDatabase>) -> Self { Self { backend } }
 }
 
 impl LvmtState {
@@ -119,8 +118,8 @@ impl LvmtState {
         let mut keys_values: BTreeMap<Box<[u8]>, Box<[u8]>> =
             if let Some(view) = &self.base_state {
                 let epoch_id = view.epoch_id;
-                self.backend
-                    .lock()
+                self.manager
+                    .backend
                     .data
                     .iter_prefix(epoch_id, key_prefix.clone())
                     .map_err(|_| {
@@ -202,8 +201,8 @@ impl StorageStateTrait for LvmtState {
         if let Some(view) = &self.base_state {
             let epoch_id = view.epoch_id;
             Ok(self
+                .manager
                 .backend
-                .lock()
                 .data
                 .get(epoch_id, key)
                 .map_err(|_| Error::Msg("Fail to get from LvmtStore".into()))?
@@ -290,10 +289,10 @@ impl StorageStateTrait for LvmtState {
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
 
-        let mut database_guard = self.backend.lock();
         let write_schema = Database::write_schema();
         // commit data
-        database_guard
+        self.manager
+            .backend
             .data
             .commit(
                 self.base_state.as_ref().map(|state| state.epoch_id),
@@ -320,7 +319,6 @@ impl StorageManagerTrait for LvmtStateManager {
     ) -> Result<Option<Box<dyn StorageStateTrait>>> {
         let maybe_state_root = self
             .backend
-            .lock()
             .state_roots
             .get(&epoch_id.epoch_id)
             .map_err(|_| Error::Msg("Err in reading StateRootTable".into()))?
@@ -332,7 +330,7 @@ impl StorageManagerTrait for LvmtStateManager {
 
         if let Some(state_root) = maybe_state_root {
             Ok(Some(Box::new(LvmtState {
-                backend: self.backend.clone(),
+                manager: self.clone(),
                 base_state: Some(LvmtView {
                     epoch_id: epoch_id.epoch_id,
                 }),
@@ -350,7 +348,7 @@ impl StorageManagerTrait for LvmtStateManager {
         _recover_mpt_during_construct_pivot_state: bool,
     ) -> Result<Option<Box<dyn StorageStateTrait>>> {
         Ok(Some(Box::new(LvmtState {
-            backend: self.backend.clone(),
+            manager: self.clone(),
             base_state: Some(LvmtView {
                 epoch_id: parent_epoch_id.epoch_id,
             }),
@@ -364,7 +362,7 @@ impl StorageManagerTrait for LvmtStateManager {
         self: &Arc<Self>,
     ) -> Box<dyn StorageStateTrait> {
         Box::new(LvmtState {
-            backend: self.backend.clone(),
+            manager: self.clone(),
             base_state: None,
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
