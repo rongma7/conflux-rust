@@ -7,7 +7,7 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "3146f9e" }
+cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "e776bfd" }
 ethereum-types = { workspace = true }
 parking_lot = { workspace = true }
 cfx-internal-common = { workspace = true }
@@ -19,3 +19,5 @@ once_cell = { workspace = true }
 ark-bls12-381 = "0.5"
 kvdb-rocksdb = { git = "https://github.com/Conflux-Chain/parity-common-rocksdb", rev = "2e60465", version = "0.17.0-iter-nochecksum-partitionedindexfilter" }
 cfx-db-errors = { workspace = true }
+malloc_size_of = { workspace = true }
+malloc_size_of_derive = { workspace = true }

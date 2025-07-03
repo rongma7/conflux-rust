@@ -35,6 +35,7 @@ pub struct StateTrees {
 
 #[derive(MallocSizeOfDerive)]
 pub struct StateManager {
+    lvmt_manager: Arc<LvmtStateManager>,
     storage_manager: Arc<StorageManager>,
     single_mpt_storage_manager: Option<Arc<SingleMptStorageManager>>,
     pub number_committed_nodes: AtomicUsize,
@@ -46,6 +47,9 @@ impl Drop for StateManager {
 
 impl StateManager {
     pub fn new(conf: StorageConfiguration) -> Result<Self> {
+        let lvmt_manager =
+            LvmtStateManager::new_arc(conf.path_storage_dir.join("lvmt"));
+
         debug!("Storage conf {:?}", conf);
         // Make sure sqlite temp directory is using the data disk instead of the
         // system disk.
@@ -65,7 +69,9 @@ impl StateManager {
         };
 
         let storage_manager = StorageManager::new_arc(conf)?;
+
         Ok(Self {
+            lvmt_manager,
             storage_manager,
             single_mpt_storage_manager,
             number_committed_nodes: Default::default(),
@@ -872,3 +878,4 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
+use storage2::LvmtStateManager;

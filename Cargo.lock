@@ -1808,7 +1808,7 @@ dependencies = [
 [[package]]
 name = "cfx-storage2"
 version = "0.1.0"
-source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=3146f9e#3146f9ee3117699d6cd641b9dbdca7e9046f22e7"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=e776bfd#e776bfd208ebffaec10e833b86195ea127946b48"
 dependencies = [
  "amt",
  "ark-bls12-381",
@@ -8528,6 +8528,8 @@ dependencies = [
  "cfx-types",
  "ethereum-types 0.9.2",
  "kvdb-rocksdb",
+ "malloc_size_of",
+ "malloc_size_of_derive",
  "once_cell",
  "parking_lot 0.12.1",
  "primitives",
