@@ -4,7 +4,7 @@
 
 // StateManager is the single entry-point to access State for any epoch.
 // StateManager manages internal mutability and is thread-safe.
-pub use super::impls::state_manager::StateManager;
+pub use super::impls::state_manager2::StateManager2 as StateManager;
 
 pub type SharedStateManager = Arc<StateManager>;
 
