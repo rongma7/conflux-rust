@@ -3,6 +3,7 @@ pub mod state_manager;
 pub use cfx_db_errors::storage as errors;
 pub use errors::{Error, Result};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use parking_lot::Mutex;
 
 use std::{borrow::Cow, collections::BTreeMap, fs, path::PathBuf, sync::Arc};
 
@@ -56,23 +57,24 @@ impl TableSchema for StateRootTable {
 }
 
 pub struct LvmtDatabase {
-    storage: Arc<LvmtStorage<Database>>,
+    storage: Arc<Mutex<LvmtStorage<Database>>>,
 }
 
 impl LvmtDatabase {
-    pub fn new(storage: Arc<LvmtStorage<Database>>) -> Result<Self> {
+    pub fn new(storage: Arc<Mutex<LvmtStorage<Database>>>) -> Result<Self> {
         Ok(Self {
             storage: storage.clone(),
         })
     }
 
     pub fn with_data<F, R>(&self, f: F) -> Result<R>
-    where F: FnOnce(&mut LvmtStore) -> Result<R> {
-        let mut data = self.storage.as_manager().map_err(|_| {
+    where F: FnOnce(&LvmtStore) -> Result<R> {
+        let storage_guard = self.storage.lock();
+        let data = storage_guard.as_manager().map_err(|_| {
             Error::Msg("Err in LvmtStorage::as_manager()".into())
         })?;
 
-        let result = f(&mut data)?;
+        let result = f(&data)?;
 
         Ok(result)
     }
@@ -81,6 +83,7 @@ impl LvmtDatabase {
     where F: FnOnce(&TableReader<'_, StateRootTable>) -> Result<R> {
         let state_roots = Arc::new(
             self.storage
+                .lock()
                 .get_backend()
                 .view::<StateRootTable>()
                 .map_err(|_| {
@@ -92,6 +95,15 @@ impl LvmtDatabase {
         let result = f(&state_roots_reader)?;
 
         Ok(result)
+    }
+
+    pub fn commit(
+        &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<()> {
+        let mut storage_guard = self.storage.lock();
+        storage_guard
+            .commit(write_schema)
+            .map_err(|_| Error::Msg("Err in commit write_schema to db".into()))
     }
 }
 
@@ -142,10 +154,16 @@ impl LvmtStateManager {
         let lvmt_storage = LvmtStorage::new(Arc::new(db))
             .expect("LvmtStorage initialize error");
         let backend = Arc::new(
-            LvmtDatabase::new(Arc::new(lvmt_storage))
+            LvmtDatabase::new(Arc::new(Mutex::new(lvmt_storage)))
                 .expect("LvmtDatabase initialize error"),
         );
         Arc::new(Self { backend })
+    }
+
+    pub fn commit(
+        &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<()> {
+        self.backend.commit(write_schema)
     }
 }
 

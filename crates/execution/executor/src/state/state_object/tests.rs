@@ -10,6 +10,7 @@ use cfx_parameters::{
     consensus::ONE_CFX_IN_DRIP, genesis::DEV_GENESIS_KEY_PAIR, staking::*,
 };
 use cfx_statedb::StateDb;
+use cfx_storage::{Database, DatabaseTrait};
 use cfx_types::{
     address_util::AddressUtil, Address, AddressSpaceUtil, BigEndianHash, U256,
 };
@@ -739,7 +740,11 @@ fn kill_account_with_checkpoints() {
 
     let epoch_id_1 = EpochId::from_uint(&U256::from(1));
     state_0
-        .commit(epoch_id_1, /* debug_record = */ None)
+        .commit(
+            epoch_id_1,
+            /* debug_record = */ None,
+            &Database::write_schema(),
+        )
         .unwrap();
 
     let mut state = get_state_by_epoch_id(&epoch_id_1);
@@ -754,7 +759,13 @@ fn kill_account_with_checkpoints() {
 
     // Commit the state and repeat the assertion.
     let epoch_id = EpochId::from_uint(&U256::from(2));
-    state.commit(epoch_id, /* debug_record = */ None).unwrap();
+    state
+        .commit(
+            epoch_id,
+            /* debug_record = */ None,
+            &Database::write_schema(),
+        )
+        .unwrap();
     let state = get_state_by_epoch_id(&epoch_id);
     assert_eq!(state.storage_at(&a_s, &k).unwrap(), U256::zero());
 
@@ -813,7 +824,11 @@ fn check_result_of_simple_payment_to_killed_account() {
     state_0.discard_checkpoint();
     let epoch_id_1 = EpochId::from_uint(&U256::from(1));
     state_0
-        .commit(epoch_id_1, /* debug_record = */ None)
+        .commit(
+            epoch_id_1,
+            /* debug_record = */ None,
+            &Database::write_schema(),
+        )
         .unwrap();
 
     let mut state = get_state_by_epoch_id(&epoch_id_1);
@@ -829,7 +844,13 @@ fn check_result_of_simple_payment_to_killed_account() {
     assert_eq!(state.code_hash(&a_s).unwrap(), KECCAK_EMPTY);
     assert_eq!(state.code(&a_s).unwrap(), None);
     // assert_eq!(state.storage_at(&a, &k).unwrap(), U256::zero());
-    state.commit(epoch_id, /* debug_record = */ None).unwrap();
+    state
+        .commit(
+            epoch_id,
+            /* debug_record = */ None,
+            &Database::write_schema(),
+        )
+        .unwrap();
 
     // Commit the state and assert that the account has no storage and no code.
     let state = get_state_by_epoch_id(&epoch_id);
@@ -860,7 +881,11 @@ fn create_contract_fail() {
     assert_eq!(state.exists(&a_s).unwrap(), false);
 
     state
-        .commit(BigEndianHash::from_uint(&U256::from(1)), None)
+        .commit(
+            BigEndianHash::from_uint(&U256::from(1)),
+            None,
+            &Database::write_schema(),
+        )
         .unwrap();
 }
 
@@ -989,7 +1014,11 @@ fn create_contract_fail_previous_storage() {
     assert_eq!(state.balance(&a_s).unwrap(), U256::from(0));
 
     state
-        .commit(BigEndianHash::from_uint(&U256::from(2)), None)
+        .commit(
+            BigEndianHash::from_uint(&U256::from(2)),
+            None,
+            &Database::write_schema(),
+        )
         .unwrap();
 
     // TODO(69): checking ownership

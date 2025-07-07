@@ -59,6 +59,12 @@ impl StateManager2 {
     ) -> Result<Option<State>> {
         unimplemented!()
     }
+
+    pub fn commit(
+        &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<()> {
+        self.lvmt_manager.commit(write_schema)
+    }
 }
 
 impl StateManagerTrait for StateManager2 {
@@ -96,6 +102,6 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
 };
-use storage2::LvmtStateManager;
+use storage2::{Database, DatabaseTrait, LvmtStateManager};
 
 use super::storage_manager::StorageManager;

@@ -437,8 +437,14 @@ where
             )
             .unwrap();
     }
+
     let epoch = H256::random();
-    state.commit(epoch, /* debug_record = */ None).unwrap();
+    let write_schema = Database::write_schema();
+    state
+        .commit(epoch, /* debug_record = */ None, &write_schema)
+        .unwrap();
+    manager.commit(write_schema).unwrap();
+
     epoch
 }
 
