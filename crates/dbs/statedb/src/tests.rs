@@ -5,7 +5,8 @@
 use super::StateDbGeneric;
 use cfx_internal_common::StateRootWithAuxInfo;
 use cfx_storage::{
-    utils::access_mode, Error, MptKeyValue, Result, StorageStateTrait,
+    utils::access_mode, Database, DatabaseTrait, Error, MptKeyValue, Result,
+    StorageStateTrait,
 };
 use parking_lot::Mutex;
 use primitives::{EpochId, StorageKey, StorageKeyWithSpace, MERKLE_NULL_NODE};
@@ -47,7 +48,10 @@ impl MockStorage {
 
 #[allow(unused)]
 impl StorageStateTrait for MockStorage {
-    fn commit(&mut self, epoch: EpochId) -> Result<StateRootWithAuxInfo> {
+    fn commit(
+        &mut self, epoch: EpochId,
+        _write_schema: &<Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<StateRootWithAuxInfo> {
         self.compute_state_root()
     }
 

@@ -45,9 +45,7 @@ impl StateManager2 {
         unimplemented!()
     }
 
-    pub fn notify_genesis_hash(&self, _genesis_hash: EpochId) {
-        unimplemented!()
-    }
+    pub fn notify_genesis_hash(&self, _genesis_hash: EpochId) { () }
 
     pub fn config(&self) -> &StorageConfiguration { &self.storage_conf }
 

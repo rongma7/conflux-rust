@@ -451,7 +451,7 @@ mod impls {
                 Err(_) => self.compute_state_root(debug_record)?,
             };
 
-            self.storage.commit(epoch_id)?;
+            self.storage.commit(epoch_id, &Database::write_schema())?;
 
             Ok(result)
         }
@@ -490,7 +490,7 @@ mod impls {
     };
     use cfx_storage::{
         utils::{access_mode, to_key_prefix_iter_upper_bound},
-        MptKeyValue, StorageStateTrait,
+        Database, DatabaseTrait, MptKeyValue, StorageStateTrait,
     };
     use cfx_types::{
         address_util::AddressUtil, Address, AddressWithSpace, Space,

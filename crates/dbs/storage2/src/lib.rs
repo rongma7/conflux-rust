@@ -15,10 +15,11 @@ pub use state_manager::{
 
 use amt::{AmtParams, CreateMode};
 use cfx_internal_common::StateRootWithAuxInfo;
+pub use cfx_storage2::backends::DatabaseTrait;
 use cfx_storage2::{
     backends::{
-        impls::kvdb_rocksdb::open_database, DatabaseTrait, TableName,
-        TableReader, TableSchema, WriteSchemaTrait,
+        impls::kvdb_rocksdb::open_database, TableName, TableReader,
+        TableSchema, WriteSchemaTrait,
     },
     LvmtStorage, LvmtStore,
 };
@@ -343,7 +344,10 @@ impl StorageStateTrait for LvmtState {
     }
 
     // commit() write LvmtStateManager
-    fn commit(&mut self, epoch: EpochId) -> Result<StateRootWithAuxInfo> {
+    fn commit(
+        &mut self, epoch: EpochId,
+        write_schema: &<Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<StateRootWithAuxInfo> {
         let state_root = self.compute_state_root_inner()?;
         let changes_inner = self
             .changes
@@ -351,7 +355,6 @@ impl StorageStateTrait for LvmtState {
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
 
-        let write_schema = Database::write_schema();
         // commit state_root
         write_schema.write::<StateRootTable>((
             Cow::Owned(epoch),

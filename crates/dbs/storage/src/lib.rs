@@ -26,6 +26,8 @@ pub mod tests;
 
 mod impls;
 
+pub use storage2::{Database, DatabaseTrait};
+
 pub mod storage_dir {
     use std::path::PathBuf;
     lazy_static! {
