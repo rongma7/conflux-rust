@@ -105,6 +105,30 @@ impl LvmtDatabase {
             .commit(write_schema)
             .map_err(|_| Error::Msg("Err in commit write_schema to db".into()))
     }
+
+    pub fn make_pivot(&self, commit_id: H256) -> Result<bool> {
+        let storage_guard = self.storage.lock();
+        storage_guard
+            .make_pivot(commit_id)
+            .map_err(|_| Error::Msg("Err in make_pivot".into()))
+    }
+
+    pub fn is_newer_than_pending_root(&self, height: u64) -> bool {
+        let storage_guard = self.storage.lock();
+        storage_guard.is_newer_than_pending_root(height)
+    }
+
+    pub fn confirmed_pending_to_history(
+        &self,
+        new_root_height: u64,
+        pivot_commit_id: H256,
+        write_schema: &<Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<()> {
+        let storage_guard = self.storage.lock();
+        storage_guard
+            .confirmed_pending_to_history_with_height(new_root_height, pivot_commit_id, write_schema)
+            .map_err(|_| Error::Msg("Err in confirmed_pending_to_history".into()))
+    }
 }
 
 pub struct LvmtView {
@@ -164,6 +188,23 @@ impl LvmtStateManager {
         &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
     ) -> Result<()> {
         self.backend.commit(write_schema)
+    }
+
+    pub fn make_pivot(&self, commit_id: H256) -> Result<bool> {
+        self.backend.make_pivot(commit_id)
+    }
+
+    pub fn is_newer_than_pending_root(&self, height: u64) -> bool {
+        self.backend.is_newer_than_pending_root(height)
+    }
+
+    pub fn confirmed_pending_to_history(
+        &self,
+        new_root_height: u64,
+        pivot_commit_id: H256,
+        write_schema: &<Database as DatabaseTrait>::WriteSchema,
+    ) -> Result<()> {
+        self.backend.confirmed_pending_to_history(new_root_height, pivot_commit_id, write_schema)
     }
 }
 
