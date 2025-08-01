@@ -25,12 +25,86 @@ impl LvmtStateManagerWithConf {
         self.storage_conf.consensus_param.snapshot_epoch_count
     }
 
+    // The input parameter `state_availability_boundary` may be modified in this function.
+    // The `state_availability_boundary.lower_bound` refers to the maximum height that has no slibling from this moment on;
+    // in storage2, the pending tree root is at that height.
+    // This function make `maintained_state_height_lower_bound` has no slibling at this moment.
+    // Temporarily, the computations of `state_availability_boundary.lower_bound` and `maintained_state_height_lower_bound`
+    // remain the same as those of storage1.
+    // non-pivot to remove: all heights
+    // old-pivot to remove: height < confirmed_snapshot_height, and !extra_snapshots_to_keep (todo)
+    // but since we will use `first_available_state_height` as the new root, we actually 
+    // remove (i.e., move from pending part to historical part) old-pivot: height < first_available_state_height.
     pub fn maintain_state_confirmed<ConsensusInner: StateMaintenanceTrait>(
-        &self, consensus_inner: &ConsensusInner, stable_checkpoint_height: u64,
-        era_epoch_count: u64, confirmed_height: u64,
+        &self, consensus_inner: &ConsensusInner, _stable_checkpoint_height: u64,
+        _era_epoch_count: u64, confirmed_height: u64,
         state_availability_boundary: &RwLock<StateAvailabilityBoundary>,
     ) -> Result<()> {
-        unimplemented!()
+        // compute `maintained_state_height_lower_bound`
+        let additional_state_height_gap =
+            (self.storage_conf.additional_maintained_snapshot_count
+                * self.get_snapshot_epoch_count()) as u64;
+        let maintained_state_height_lower_bound =
+            if confirmed_height > additional_state_height_gap {
+                confirmed_height - additional_state_height_gap
+            } else {
+                0
+            };
+        if maintained_state_height_lower_bound
+            <= state_availability_boundary.read().lower_bound
+        {
+            return Ok(());
+        }
+        let maintained_epoch_id = consensus_inner
+            .get_pivot_hash_from_epoch_number(
+                maintained_state_height_lower_bound,
+            )?;
+
+        // compute the new `state_availability_boundary.lower_bound`
+        let confirmed_intermediate_height = maintained_state_height_lower_bound
+            - StateIndex::height_to_delta_height(
+                maintained_state_height_lower_bound,
+                self.get_snapshot_epoch_count(),
+            ) as u64;
+
+        let confirmed_snapshot_height = if confirmed_intermediate_height
+            > self.get_snapshot_epoch_count() as u64
+        {
+            confirmed_intermediate_height
+                - self.get_snapshot_epoch_count() as u64
+        } else {
+            0
+        };
+        let first_available_state_height = if confirmed_snapshot_height > 0 {
+            confirmed_snapshot_height + 1
+        } else {
+            0
+        };
+
+        let non_pivot_removed = self.lvmt_manager.make_pivot(maintained_epoch_id)?;
+        let adjust_pending_root = self.lvmt_manager.is_newer_than_pending_root(first_available_state_height);
+        if non_pivot_removed || adjust_pending_root
+        {
+            {
+                // TODO: Archive node may do something different.
+                let state_boundary = &mut *state_availability_boundary.write();
+                if first_available_state_height > state_boundary.lower_bound {
+                    state_boundary
+                        .adjust_lower_bound(first_available_state_height);
+                }
+            }
+
+            // change pending root to be the new `state_availability_boundary.lower_bound`
+            let write_schema = Database::write_schema();
+            if adjust_pending_root {
+                self.lvmt_manager.confirmed_pending_to_history(first_available_state_height, maintained_epoch_id, &write_schema)?;
+            }
+            self.lvmt_manager.commit(write_schema)?;
+        }
+
+        info!("maintain_state_confirmed: finished");
+        Ok(())
+
     }
 
     pub fn get_snapshot_manager(
