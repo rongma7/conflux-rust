@@ -7,15 +7,21 @@ pub struct LvmtStateManagerWithConf {
     pub storage_conf: StorageConfiguration,
     // used during startup for the next compute epoch
     pub intermediate_trie_root_merkle: RwLock<Option<MerkleHash>>,
-    pub persist_state_from_initialization: // todo
+    pub persist_state_from_initialization:
         RwLock<Option<(Option<EpochId>, HashSet<EpochId>, u64, Option<u64>)>>,
 }
 
 impl LvmtStateManagerWithConf {
     pub fn new_arc(storage_conf: StorageConfiguration) -> Arc<Self> {
-        let lvmt_manager =
-            LvmtStateManager::new_arc(storage_conf.path_storage_dir.join("lvmt"));
-        Arc::new(Self { lvmt_manager, storage_conf, intermediate_trie_root_merkle: RwLock::new(None), persist_state_from_initialization: RwLock::new(None) })
+        let lvmt_manager = LvmtStateManager::new_arc(
+            storage_conf.path_storage_dir.join("lvmt"),
+        );
+        Arc::new(Self {
+            lvmt_manager,
+            storage_conf,
+            intermediate_trie_root_merkle: RwLock::new(None),
+            persist_state_from_initialization: RwLock::new(None),
+        })
     }
 }
 
@@ -25,19 +31,24 @@ impl LvmtStateManagerWithConf {
         self.storage_conf.consensus_param.snapshot_epoch_count
     }
 
-    // The input parameter `state_availability_boundary` may be modified in this function.
-    // The `state_availability_boundary.lower_bound` refers to the maximum height that has no slibling from this moment on;
-    // in storage2, the pending tree root is at that height.
-    // This function make `maintained_state_height_lower_bound` has no slibling at this moment.
-    // Temporarily, the computations of `state_availability_boundary.lower_bound` and `maintained_state_height_lower_bound`
-    // remain the same as those of storage1.
-    // non-pivot to remove: all heights
-    // old-pivot to remove: height < confirmed_snapshot_height, and !extra_snapshots_to_keep (todo)
-    // but since we will use `first_available_state_height` as the new root, we actually 
-    // remove (i.e., move from pending part to historical part) old-pivot: height < first_available_state_height.
+    // The input parameter `state_availability_boundary` may be modified in this
+    // function. The `state_availability_boundary.lower_bound` refers to the
+    // maximum height that has no slibling from this moment on; in storage2,
+    // the pending tree root is at that height. This function make
+    // `maintained_state_height_lower_bound` has no slibling at this moment.
+    // Temporarily, the computations of
+    // `state_availability_boundary.lower_bound` and
+    // `maintained_state_height_lower_bound` remain the same as those of
+    // storage1. non-pivot to remove: all heights
+    // old-pivot to remove: height < confirmed_snapshot_height, and
+    // !extra_snapshots_to_keep (todo) but since we will use
+    // `first_available_state_height` as the new root, we actually
+    // remove (i.e., move from pending part to historical part) old-pivot:
+    // height < first_available_state_height.
     pub fn maintain_state_confirmed<ConsensusInner: StateMaintenanceTrait>(
-        &self, consensus_inner: &ConsensusInner, _stable_checkpoint_height: u64,
-        _era_epoch_count: u64, confirmed_height: u64,
+        &self, consensus_inner: &ConsensusInner,
+        _stable_checkpoint_height: u64, _era_epoch_count: u64,
+        confirmed_height: u64,
         state_availability_boundary: &RwLock<StateAvailabilityBoundary>,
     ) -> Result<()> {
         // compute `maintained_state_height_lower_bound`
@@ -81,10 +92,12 @@ impl LvmtStateManagerWithConf {
             0
         };
 
-        let non_pivot_removed = self.lvmt_manager.make_pivot(maintained_epoch_id)?;
-        let adjust_pending_root = self.lvmt_manager.is_newer_than_pending_root(first_available_state_height);
-        if non_pivot_removed || adjust_pending_root
-        {
+        let non_pivot_removed =
+            self.lvmt_manager.make_pivot(maintained_epoch_id)?;
+        let adjust_pending_root = self
+            .lvmt_manager
+            .is_newer_than_pending_root(first_available_state_height);
+        if non_pivot_removed || adjust_pending_root {
             {
                 // TODO: Archive node may do something different.
                 let state_boundary = &mut *state_availability_boundary.write();
@@ -94,17 +107,21 @@ impl LvmtStateManagerWithConf {
                 }
             }
 
-            // change pending root to be the new `state_availability_boundary.lower_bound`
+            // change pending root to be the new
+            // `state_availability_boundary.lower_bound`
             let write_schema = Database::write_schema();
             if adjust_pending_root {
-                self.lvmt_manager.confirmed_pending_to_history(first_available_state_height, maintained_epoch_id, &write_schema)?;
+                self.lvmt_manager.confirmed_pending_to_history(
+                    first_available_state_height,
+                    maintained_epoch_id,
+                    &write_schema,
+                )?;
             }
             self.lvmt_manager.commit(write_schema)?;
         }
 
         info!("maintain_state_confirmed: finished");
         Ok(())
-
     }
 
     pub fn get_snapshot_manager(
@@ -112,7 +129,8 @@ impl LvmtStateManagerWithConf {
     ) -> &(dyn SnapshotManagerTrait<
         SnapshotDb = SnapshotDb,
         SnapshotDbManager = SnapshotDbManager,
-    > + Send + Sync) {
+    > + Send
+             + Sync) {
         unimplemented!()
     }
 
@@ -142,8 +160,7 @@ impl StateManager2 {
         // system disk.
         std::env::set_var("SQLITE_TMPDIR", conf.path_snapshot_dir.clone());
 
-        let lvmt_manager =
-            LvmtStateManagerWithConf::new_arc(conf);
+        let lvmt_manager = LvmtStateManagerWithConf::new_arc(conf);
 
         Ok(Self {
             lvmt_manager,
@@ -168,7 +185,9 @@ impl StateManager2 {
 
     pub fn notify_genesis_hash(&self, _genesis_hash: EpochId) { () }
 
-    pub fn config(&self) -> &StorageConfiguration { &self.lvmt_manager.storage_conf }
+    pub fn config(&self) -> &StorageConfiguration {
+        &self.lvmt_manager.storage_conf
+    }
 
     pub fn get_state_no_commit_inner(
         self: &Arc<Self>, _state_index: StateIndex, _try_open: bool,
@@ -190,8 +209,11 @@ impl StateManagerTrait for StateManager2 {
         space: Option<Space>,
     ) -> Result<Option<Box<dyn StateTrait>>> {
         debug!("read state from lvmt state: epoch={}", state_index.epoch_id);
-        self.lvmt_manager.lvmt_manager
-            .get_state_no_commit(state_index, try_open, space)
+        self.lvmt_manager.lvmt_manager.get_state_no_commit(
+            state_index,
+            try_open,
+            space,
+        )
     }
 
     fn get_state_for_genesis_write(self: &Arc<Self>) -> Box<dyn StateTrait> {
@@ -210,17 +232,26 @@ impl StateManagerTrait for StateManager2 {
 }
 
 use crate::{
-    impls::errors::*, snapshot_manager::SnapshotManagerTrait, state::*, state_manager::*, storage_db::SnapshotInfo, StorageConfiguration
+    impls::errors::*, snapshot_manager::SnapshotManagerTrait, state::*,
+    state_manager::*, storage_db::SnapshotInfo, StorageConfiguration,
 };
-use cfx_internal_common::{consensus_api::StateMaintenanceTrait, StateAvailabilityBoundary};
+use cfx_internal_common::{
+    consensus_api::StateMaintenanceTrait, StateAvailabilityBoundary,
+};
 use cfx_types::Space;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use parking_lot::RwLock;
 use primitives::{EpochId, MerkleHash};
-use std::{collections::HashSet, sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc,
-}};
+use std::{
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 use storage2::{Database, DatabaseTrait, LvmtStateManager};
 
-use super::{state_manager::{SnapshotDb, SnapshotDbManager}, storage_manager::StorageManager};
+use super::{
+    state_manager::{SnapshotDb, SnapshotDbManager},
+    storage_manager::StorageManager,
+};
