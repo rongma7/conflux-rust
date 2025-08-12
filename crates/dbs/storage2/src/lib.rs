@@ -5,7 +5,7 @@ pub use errors::{Error, Result};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use parking_lot::Mutex;
 
-use std::{borrow::Cow, collections::BTreeMap, fs, path::PathBuf, sync::Arc};
+use std::{borrow::Cow, collections::BTreeMap, fs, path::{Path, PathBuf}, sync::Arc};
 
 pub type MptKeyValue = (Vec<u8>, Box<[u8]>);
 pub use state::StateTrait as StorageStateTrait;
@@ -36,8 +36,10 @@ use tiny_keccak::{Hasher, Keccak};
 pub type PE = ark_bls12_381::Bls12_381;
 pub const TEST_LEVEL: usize = 16;
 pub static AMT: Lazy<AmtParams<PE>> = Lazy::new(|| {
+    let pp_path = Path::new(env!("WORKSPACE_ROOT")).join("pp");
+    
     AmtParams::from_dir_mont(
-        "./pp",
+        pp_path,
         TEST_LEVEL,
         TEST_LEVEL,
         CreateMode::Neither,
