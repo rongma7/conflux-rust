@@ -422,6 +422,24 @@ impl StorageStateTrait for LvmtState {
         &mut self, epoch: EpochId,
         write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
+        if self.manager.backend.with_data(|data| {
+            Ok(data
+                .query_commit_existence(&epoch)
+                .map_err(|e| {dbg!(e); Error::Msg("Fail to query_commit_existence in LvmtStore".into())})?)
+        })? {
+            let maybe_state_root =
+                self.manager.backend.with_state_roots(|state_roots| {
+                    Ok(state_roots
+                        .get(&epoch)
+                        .map_err(|_| {
+                            Error::Msg("Err in reading StateRootTable".into())
+                        })?
+                        .map(|sr| sr.into_owned()))
+                })?;
+            let state_root = maybe_state_root.expect("State root should be existing for existing commit in Lvmt");
+            return Ok(StateRootWithAuxInfo::genesis(&state_root))
+        }
+
         info!(
             "Before commit to pending part. Backend strong_count: {}, weak_count: {}",
             Arc::strong_count(&self.manager.backend),
@@ -450,7 +468,7 @@ impl StorageStateTrait for LvmtState {
                     &write_schema,
                     &AMT,
                 )
-                .map_err(|_| Error::Msg("Fail to commit LvmtStore".into()))?)
+                .map_err(|e| {dbg!(e); Error::Msg("Fail to commit LvmtStore".into())})?)
         })?;
         // commit data (to historical part) // TODO: how to determine new_root
         // self.manager.backend.storage.confirmed_pending_to_history(todo!(),
