@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 pub mod state;
 pub mod state_manager;
 pub use cfx_db_errors::storage as errors;
@@ -78,6 +81,8 @@ impl LvmtDatabase {
 
         let result = f(&data)?;
 
+        drop(data);
+
         Ok(result)
     }
 
@@ -95,6 +100,8 @@ impl LvmtDatabase {
 
         let state_roots_reader: TableReader<'_, StateRootTable> = state_roots;
         let result = f(&state_roots_reader)?;
+
+        drop(state_roots_reader);
 
         Ok(result)
     }
@@ -415,6 +422,12 @@ impl StorageStateTrait for LvmtState {
         &mut self, epoch: EpochId,
         write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
+        info!(
+            "Before commit to pending part. Backend strong_count: {}, weak_count: {}",
+            Arc::strong_count(&self.manager.backend),
+            Arc::weak_count(&self.manager.backend)
+        );
+
         let state_root = self.compute_state_root_inner()?;
         let changes_inner = self
             .changes
@@ -446,6 +459,12 @@ impl StorageStateTrait for LvmtState {
         // TODO: should invoke backend.backend.commit to make sure all data in
         // write_schema are written,       this invocation should be
         // outside commit() function but before any read operation of any state.
+
+        info!(
+            "After commit to pending part. Backend strong_count: {}, weak_count: {}",
+            Arc::strong_count(&self.manager.backend),
+            Arc::weak_count(&self.manager.backend)
+        );
 
         Ok(StateRootWithAuxInfo::genesis(&state_root))
     }
