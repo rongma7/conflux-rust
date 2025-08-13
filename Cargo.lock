@@ -8534,6 +8534,7 @@ dependencies = [
  "cfx-types",
  "ethereum-types 0.9.2",
  "kvdb-rocksdb",
+ "log",
  "malloc_size_of",
  "malloc_size_of_derive",
  "once_cell",
