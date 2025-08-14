@@ -488,11 +488,10 @@ impl StorageStateTrait for LvmtState {
     }
 }
 
-impl StorageManagerTrait for LvmtStateManager {
-    fn get_state_no_commit(
-        self: &Arc<Self>, epoch_id: StateIndex, _try_open: bool,
-        _space: Option<Space>,
-    ) -> Result<Option<Box<dyn StorageStateTrait>>> {
+impl LvmtStateManager {
+    pub fn get_state_no_commit_inner(
+        self: &Arc<Self>, epoch_id: StateIndex
+    ) -> Result<Option<LvmtState>> {
         let maybe_state_root =
             self.backend.with_state_roots(|state_roots| {
                 Ok(state_roots
@@ -508,7 +507,7 @@ impl StorageManagerTrait for LvmtStateManager {
         }
 
         if let Some(state_root) = maybe_state_root {
-            Ok(Some(Box::new(LvmtState {
+            Ok(Some(LvmtState {
                 manager: self.clone(),
                 base_state: Some(LvmtView {
                     epoch_id: epoch_id.epoch_id,
@@ -516,10 +515,19 @@ impl StorageManagerTrait for LvmtStateManager {
                 changes: None,
                 cached_state_root: Some(state_root),
                 delta_trie_key_padding: epoch_id.delta_mpt_key_padding,
-            })))
+            }))
         } else {
             Ok(None)
         }
+    }
+}
+
+impl StorageManagerTrait for LvmtStateManager {
+    fn get_state_no_commit(
+        self: &Arc<Self>, epoch_id: StateIndex, _try_open: bool,
+        _space: Option<Space>,
+    ) -> Result<Option<Box<dyn StorageStateTrait>>> {
+        Ok(self.get_state_no_commit_inner(epoch_id)?.map(|s| Box::new(s) as Box<dyn StorageStateTrait>))
     }
 
     fn get_state_for_next_epoch(
