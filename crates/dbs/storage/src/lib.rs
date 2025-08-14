@@ -220,11 +220,12 @@ pub use self::{
         },
     },
     replicated_state::ReplicatedState,
-    state::{State as StorageState, StateTraitExt as StorageStateTraitExt},
+    state::StateTraitExt as StorageStateTraitExt,
     state_manager::StateManager as StorageManager,
     storage_db::KeyValueDbTrait,
 };
 
+pub use impls::state_manager2::WrappedLvmtState as StorageState;
 pub use storage2::{StateIndex, StorageManagerTrait, StorageStateTrait};
 
 #[cfg(any(test, feature = "testonly_code"))]

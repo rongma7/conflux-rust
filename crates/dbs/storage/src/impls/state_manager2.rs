@@ -2,6 +2,42 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
+pub struct WrappedLvmtState(pub LvmtState);
+
+impl Deref for WrappedLvmtState {
+    type Target = LvmtState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for WrappedLvmtState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl StateDbGetOriginalMethods for WrappedLvmtState {
+    fn get_original_raw_with_proof(
+        &self, _key: primitives::StorageKeyWithSpace,
+    ) -> Result<(Option<Box<[u8]>>, crate::StateProof)> {
+        unimplemented!()
+    }
+
+    fn get_original_storage_root(
+        &self, _address: &cfx_types::AddressWithSpace,
+    ) -> Result<primitives::StorageRoot> {
+        unimplemented!()
+    }
+
+    fn get_original_storage_root_with_proof(
+        &self, _address: &cfx_types::AddressWithSpace,
+    ) -> Result<(primitives::StorageRoot, crate::StorageRootProof)> {
+        unimplemented!()
+    }
+}
+
 pub struct LvmtStateManagerWithConf {
     lvmt_manager: Arc<LvmtStateManager>,
     pub storage_conf: StorageConfiguration,
@@ -190,10 +226,10 @@ impl StateManager2 {
     }
 
     pub fn get_state_no_commit_inner(
-        self: &Arc<Self>, _state_index: StateIndex, _try_open: bool,
+        self: &Arc<Self>, state_index: StateIndex, _try_open: bool,
         _open_mpt_snapshot: bool,
-    ) -> Result<Option<State>> {
-        unimplemented!()
+    ) -> Result<Option<WrappedLvmtState>> {
+        Ok(self.lvmt_manager.lvmt_manager.get_state_no_commit_inner(state_index)?.map(|s| WrappedLvmtState(s)))
     }
 
     pub fn commit(
@@ -243,13 +279,12 @@ use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use parking_lot::RwLock;
 use primitives::{EpochId, MerkleHash};
 use std::{
-    collections::HashSet,
-    sync::{
+    collections::HashSet, ops::{Deref, DerefMut}, sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
-    },
+    }
 };
-use storage2::{Database, DatabaseTrait, LvmtStateManager};
+use storage2::{Database, DatabaseTrait, LvmtState, LvmtStateManager};
 
 use super::{
     state_manager::{SnapshotDb, SnapshotDbManager},

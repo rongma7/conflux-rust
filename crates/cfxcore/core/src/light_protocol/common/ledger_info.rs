@@ -10,8 +10,8 @@ use cfx_internal_common::StateRootWithAuxInfo;
 use cfx_parameters::consensus::DEFERRED_STATE_EPOCH_COUNT;
 
 use cfx_storage::{
-    state::{State, StateDbGetOriginalMethods, StateTrait},
-    StateProof, StorageRootProof,
+    state::{StateDbGetOriginalMethods, StateTrait},
+    StateProof, StorageRootProof, StorageState,
 };
 use cfx_types::{Address, AddressSpaceUtil, Bloom, H256};
 use primitives::{
@@ -168,7 +168,7 @@ impl LedgerInfo {
 
     /// Get the state trie corresponding to the execution of `epoch`.
     #[inline]
-    fn state_of(&self, epoch: u64) -> Result<State, Error> {
+    fn state_of(&self, epoch: u64) -> Result<StorageState, Error> {
         let pivot = self.pivot_hash_of(epoch)?;
 
         let maybe_state_index = self
