@@ -2112,13 +2112,13 @@ impl ConsensusNewBlockHandler {
             }
         }
 
-        inner
-            .data_man
-            .storage_manager
-            .get_storage_manager()
-            .get_snapshot_manager()
-            .get_snapshot_db_manager()
-            .clean_snapshot_epoch_id_before_recovered();
+        // inner
+        //     .data_man
+        //     .storage_manager
+        //     .get_storage_manager()
+        //     .get_snapshot_manager()
+        //     .get_snapshot_db_manager()
+        //     .clean_snapshot_epoch_id_before_recovered();
     }
 
     fn get_force_compute_index(
