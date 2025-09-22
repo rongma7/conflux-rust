@@ -26,7 +26,7 @@ pub mod tests;
 
 mod impls;
 
-pub use storage2::{Database, DatabaseTrait};
+pub use storage2::DatabaseTrait;
 
 pub mod storage_dir {
     use std::path::PathBuf;

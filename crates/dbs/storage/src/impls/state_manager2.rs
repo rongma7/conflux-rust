@@ -50,7 +50,8 @@ pub struct LvmtStateManagerWithConf {
 impl LvmtStateManagerWithConf {
     pub fn new_arc(storage_conf: StorageConfiguration) -> Arc<Self> {
         let lvmt_manager = LvmtStateManager::new_arc(
-            storage_conf.path_storage_dir.join("lvmt"),
+            storage_conf.path_storage_dir.join("lvmt_historical"),
+            storage_conf.path_storage_dir.join("lvmt_pending"),
         );
         Arc::new(Self {
             lvmt_manager,
@@ -145,15 +146,12 @@ impl LvmtStateManagerWithConf {
 
             // change pending root to be the new
             // `state_availability_boundary.lower_bound`
-            let write_schema = Database::write_schema();
             if adjust_pending_root {
                 self.lvmt_manager.confirmed_pending_to_history(
                     first_available_state_height,
                     maintained_epoch_id,
-                    &write_schema,
                 )?;
             }
-            self.lvmt_manager.commit(write_schema)?;
         }
 
         info!("maintain_state_confirmed: finished");
@@ -231,12 +229,6 @@ impl StateManager2 {
     ) -> Result<Option<WrappedLvmtState>> {
         Ok(self.lvmt_manager.lvmt_manager.get_state_no_commit_inner(state_index)?.map(|s| WrappedLvmtState(s)))
     }
-
-    pub fn commit(
-        &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
-    ) -> Result<()> {
-        self.lvmt_manager.lvmt_manager.commit(write_schema)
-    }
 }
 
 impl StateManagerTrait for StateManager2 {
@@ -284,7 +276,7 @@ use std::{
         Arc,
     }
 };
-use storage2::{Database, DatabaseTrait, LvmtState, LvmtStateManager};
+use storage2::{LvmtState, LvmtStateManager};
 
 use super::{
     state_manager::{SnapshotDb, SnapshotDbManager},

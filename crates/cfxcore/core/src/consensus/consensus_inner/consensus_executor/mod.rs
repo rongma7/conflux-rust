@@ -28,7 +28,7 @@ use cfx_internal_common::{
 use cfx_parameters::consensus::*;
 use cfx_statedb::{Result as DbResult, StateDb};
 use cfx_storage::{
-    defaults::DEFAULT_EXECUTION_PREFETCH_THREADS, Database, DatabaseTrait,
+    defaults::DEFAULT_EXECUTION_PREFETCH_THREADS,
     StateIndex, StorageManagerTrait,
 };
 use cfx_types::{
@@ -1097,12 +1097,10 @@ impl ConsensusExecutionHandler {
         )
         .expect("db error");
 
-        let write_schema = Database::write_schema();
         let commit_result = state
-            .commit(*epoch_hash, debug_record.as_deref_mut(), &write_schema)
+            .commit(*epoch_hash, debug_record.as_deref_mut())
             .expect(&concat!(file!(), ":", line!(), ":", column!()));
-        self.data_man.storage_manager.commit(write_schema).unwrap();
-
+        
         if on_local_pivot {
             self.notify_txpool(&commit_result, epoch_hash);
         };

@@ -26,7 +26,7 @@ use cfx_parameters::{
 };
 use cfx_statedb::StateDb;
 use cfx_storage::{
-    Database, DatabaseTrait, StorageManager, StorageManagerTrait,
+    StorageManager, StorageManagerTrait,
 };
 use cfx_types::{
     address_util::AddressUtil, Address, AddressSpaceUtil, AddressWithSpace,
@@ -408,16 +408,13 @@ pub fn genesis_block(
         genesis.hash()
     );
 
-    let write_schema = Database::write_schema();
     state
         .commit(
             genesis.block_header.hash(),
             /* debug_record = */ debug_record.as_mut(),
-            &write_schema,
         )
         .unwrap();
-    storage_manager.commit(write_schema).unwrap();
-
+    
     genesis.block_header.pow_hash = Some(Default::default());
     debug!(
         "genesis debug_record {}",

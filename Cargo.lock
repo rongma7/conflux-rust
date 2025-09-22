@@ -911,6 +911,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.60.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1360,6 +1369,7 @@ dependencies = [
 name = "cfx-db-errors"
 version = "2.0.2"
 dependencies = [
+ "cfx-storage2",
  "cfx-types",
  "primitives",
  "rlp 0.4.6",
@@ -1800,7 +1810,7 @@ dependencies = [
 [[package]]
 name = "cfx-storage2"
 version = "0.1.0"
-source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=d9427fc#d9427fc871e78899f7ffd69f420f35b7f9aea9df"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=2637a4c#2637a4cb7324283240ad5dcb742a23fb7286e41d"
 dependencies = [
  "amt",
  "ark-bls12-381",
@@ -1810,13 +1820,17 @@ dependencies = [
  "ark-serialize 0.5.0",
  "ark-std 0.5.0",
  "auto_impl",
+ "bincode",
  "blake2",
  "ethereum-types 0.9.2",
  "itertools 0.13.0",
- "kvdb 0.13.0",
- "kvdb-rocksdb",
+ "kvdb 0.13.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=4138407)",
+ "kvdb-rocksdb 0.17.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=4138407)",
+ "log",
+ "nonempty",
  "parking_lot 0.12.4",
  "proptest",
+ "serde",
  "slab",
  "static_assertions",
  "thiserror 1.0.69",
@@ -5325,11 +5339,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "kvdb"
+version = "0.13.0"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=4138407#41384077d0470c0c23ec73ce5fd8251b3e64ffdc"
+dependencies = [
+ "smallvec 1.15.1",
+]
+
+[[package]]
 name = "kvdb-rocksdb"
 version = "0.17.0"
 source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465#2e60465cc1ec230a6489289211781984cbdadfb7"
 dependencies = [
- "kvdb 0.13.0",
+ "kvdb 0.13.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465)",
+ "num_cpus",
+ "parking_lot 0.12.4",
+ "regex",
+ "rocksdb",
+ "smallvec 1.15.1",
+]
+
+[[package]]
+name = "kvdb-rocksdb"
+version = "0.17.0"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=4138407#41384077d0470c0c23ec73ce5fd8251b3e64ffdc"
+dependencies = [
+ "kvdb 0.13.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=4138407)",
  "num_cpus",
  "parking_lot 0.12.4",
  "regex",
@@ -5880,6 +5915,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonempty"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
 name = "num"
@@ -8533,7 +8574,7 @@ dependencies = [
  "cfx-storage2",
  "cfx-types",
  "ethereum-types 0.9.2",
- "kvdb-rocksdb",
+ "kvdb-rocksdb 0.17.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=2e60465)",
  "log",
  "malloc_size_of",
  "malloc_size_of_derive",

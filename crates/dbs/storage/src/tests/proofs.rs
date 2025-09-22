@@ -86,7 +86,7 @@ fn generate_random_state(
     epoch_id_0.as_bytes_mut()[0] = 1;
     let root_0 = state_0.compute_state_root().unwrap();
     state_0
-        .commit(epoch_id_0, &storage2::Database::write_schema())
+        .commit(epoch_id_0)
         .unwrap();
 
     // insert 1st, 3rd, 4th, 5th 1/7 portions into state-1
@@ -144,7 +144,7 @@ fn generate_random_state(
     epoch_id_1.as_bytes_mut()[0] = 2;
     let root_1 = state_1.compute_state_root().unwrap();
     state_1
-        .commit(epoch_id_1, &storage2::Database::write_schema())
+        .commit(epoch_id_1)
         .unwrap();
 
     // insert 2nd, 3rd, 5th, 6th 1/7 portions into state-2
@@ -202,7 +202,7 @@ fn generate_random_state(
     epoch_id_2.as_bytes_mut()[0] = 3;
     let root_2 = state_2.compute_state_root().unwrap();
     state_2
-        .commit(epoch_id_2, &storage2::Database::write_schema())
+        .commit(epoch_id_2)
         .unwrap();
 
     keys.shuffle(rng);
@@ -717,4 +717,3 @@ use primitives::{
 };
 use rand::{seq::SliceRandom, Rng};
 use rand_chacha::ChaChaRng;
-use storage2::DatabaseTrait;

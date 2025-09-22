@@ -164,8 +164,6 @@ impl FallibleIterator for FakeSnapshotMptDbIter<'_> {
 
 #[cfg(test)]
 fn assert_snapshot_mpt_formation(mpt_kv_iter: &DumpedMptKvIterator) {
-    use storage2::DatabaseTrait;
-
     let snapshot_mpt_nodes;
     let delta_mpt_root = {
         let state_manager = new_state_manager_for_unit_test();
@@ -183,7 +181,7 @@ fn assert_snapshot_mpt_formation(mpt_kv_iter: &DumpedMptKvIterator) {
         epoch_id.as_bytes_mut()[0] = 1;
         let root = state.compute_state_root().unwrap().state_root;
         state
-            .commit(epoch_id, &storage2::Database::write_schema())
+            .commit(epoch_id)
             .unwrap();
 
         snapshot_mpt_nodes =
@@ -224,8 +222,6 @@ fn assert_snapshot_mpt_formation(mpt_kv_iter: &DumpedMptKvIterator) {
 #[test]
 fn test_mpt_node_path_to_from_db_key() {
     // First, construct some special compressed path in a node.
-
-    use storage2::DatabaseTrait;
     let mpt_kv = [
         (vec![0x00, 0x10, 0x00, 0x00], vec![0x00]),
         (vec![0x00, 0x01, 0x00, 0x00, 0x02], vec![0x00]),
@@ -252,7 +248,7 @@ fn test_mpt_node_path_to_from_db_key() {
     epoch_id.as_bytes_mut()[0] = 1;
     state.compute_state_root().unwrap();
     let state_root_with_aux_info = state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     let state = state_manager

@@ -5,7 +5,7 @@ use std::{
 
 use cfx_internal_common::StateRootWithAuxInfo;
 use cfx_storage::{
-    state::StateTrait as StorageTrait, Database, DatabaseTrait, Error, Result,
+    state::StateTrait as StorageTrait, Error, Result,
 };
 use cfx_types::H256;
 use primitives::StorageKeyWithSpace;
@@ -103,7 +103,6 @@ impl StorageTrait for InmemoryStorage {
 
     fn commit(
         &mut self, epoch: primitives::EpochId,
-        _write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
         let root = self.compute_state_root()?;
         HASHMAP.with_borrow_mut(|x| x.insert(epoch, self.inner.clone()));

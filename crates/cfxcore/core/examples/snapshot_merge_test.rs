@@ -9,7 +9,7 @@ use cfx_statedb::{StateDb, StateDbExt};
 use cfx_storage::{
     state_manager::{StateManager, StateManagerTrait},
     storage_db::{KeyValueDbTraitRead, SnapshotDbManagerTrait, SnapshotInfo},
-    Database, DatabaseTrait, DeltaMptIterator, Error as StorageError,
+    DeltaMptIterator, Error as StorageError,
     StateIndex, StorageConfiguration,
 };
 use cfx_types::{Address, AddressSpaceUtil, AddressWithSpace, H256};
@@ -321,7 +321,7 @@ fn initialize_genesis(
         "fa4e44bc69cca4cb2ae88a8fd452826faab9e8764e7eed934feede46c98962fa",
     )
     .unwrap();
-    state.commit(genesis_hash.clone(), &Database::write_schema())?;
+    state.commit(genesis_hash.clone())?;
 
     Ok((genesis_hash, root.state_root.delta_root))
 }
@@ -439,11 +439,9 @@ where
     }
 
     let epoch = H256::random();
-    let write_schema = Database::write_schema();
     state
-        .commit(epoch, /* debug_record = */ None, &write_schema)
+        .commit(epoch, /* debug_record = */ None)
         .unwrap();
-    manager.commit(write_schema).unwrap();
 
     epoch
 }

@@ -11,7 +11,6 @@ use primitives::{
     MERKLE_NULL_NODE,
 };
 use std::{cell::UnsafeCell, collections::HashSet, sync::Arc};
-use storage2::{Database, DatabaseTrait};
 
 pub struct SingleMptState {
     trie: Arc<DeltaMpt>,
@@ -390,7 +389,6 @@ impl StateTrait for SingleMptState {
     // TODO(yz): replace coarse lock with a queue.
     fn commit(
         &mut self, epoch_id: EpochId,
-        _write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
         self.ensure_temp_slab_for_db_load();
 

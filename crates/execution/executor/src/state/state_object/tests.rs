@@ -10,7 +10,6 @@ use cfx_parameters::{
     consensus::ONE_CFX_IN_DRIP, genesis::DEV_GENESIS_KEY_PAIR, staking::*,
 };
 use cfx_statedb::StateDb;
-use cfx_storage::{Database, DatabaseTrait};
 use cfx_types::{
     address_util::AddressUtil, Address, AddressSpaceUtil, BigEndianHash, U256,
 };
@@ -743,7 +742,6 @@ fn kill_account_with_checkpoints() {
         .commit(
             epoch_id_1,
             /* debug_record = */ None,
-            &Database::write_schema(),
         )
         .unwrap();
 
@@ -763,7 +761,6 @@ fn kill_account_with_checkpoints() {
         .commit(
             epoch_id,
             /* debug_record = */ None,
-            &Database::write_schema(),
         )
         .unwrap();
     let state = get_state_by_epoch_id(&epoch_id);
@@ -827,7 +824,6 @@ fn check_result_of_simple_payment_to_killed_account() {
         .commit(
             epoch_id_1,
             /* debug_record = */ None,
-            &Database::write_schema(),
         )
         .unwrap();
 
@@ -848,7 +844,6 @@ fn check_result_of_simple_payment_to_killed_account() {
         .commit(
             epoch_id,
             /* debug_record = */ None,
-            &Database::write_schema(),
         )
         .unwrap();
 
@@ -884,7 +879,6 @@ fn create_contract_fail() {
         .commit(
             BigEndianHash::from_uint(&U256::from(1)),
             None,
-            &Database::write_schema(),
         )
         .unwrap();
 }
@@ -1017,7 +1011,6 @@ fn create_contract_fail_previous_storage() {
         .commit(
             BigEndianHash::from_uint(&U256::from(2)),
             None,
-            &Database::write_schema(),
         )
         .unwrap();
 
