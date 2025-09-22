@@ -12,7 +12,6 @@ use std::{
     sync::mpsc::{channel, Sender},
     thread::{self, JoinHandle},
 };
-use storage2::{Database, DatabaseTrait};
 
 pub struct ReplicatedState<Main> {
     state: Main,
@@ -79,7 +78,7 @@ impl ReplicationHandler {
                         }
                         StateOperation::Commit { epoch_id } => {
                             return replicated_state
-                                .commit(epoch_id, &Database::write_schema())
+                                .commit(epoch_id)
                                 .map(|_| ());
                         }
                     };
@@ -337,9 +336,8 @@ impl<Main: StateTrait> StateTrait for ReplicatedState<Main> {
 
     fn commit(
         &mut self, epoch_id: EpochId,
-        write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
-        let r = self.state.commit(epoch_id, write_schema);
+        let r = self.state.commit(epoch_id);
         self.replication_handler
             .send_op(StateOperation::Commit { epoch_id });
         // TODO(lpl): This can be probably delayed.

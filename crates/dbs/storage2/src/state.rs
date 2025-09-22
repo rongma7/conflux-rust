@@ -51,13 +51,9 @@ pub trait StateTrait: Sync + Send {
     fn get_state_root(&self) -> Result<StateRootWithAuxInfo>;
     fn commit(
         &mut self, epoch: EpochId,
-        write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo>;
 }
 
-use crate::Database;
-
 use super::{MptKeyValue, StateRootWithAuxInfo};
 use cfx_db_errors::storage::Result;
-use cfx_storage2::backends::DatabaseTrait;
 use primitives::{EpochId, StorageKeyWithSpace};

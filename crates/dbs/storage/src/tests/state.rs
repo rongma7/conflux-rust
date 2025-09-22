@@ -13,7 +13,7 @@ fn test_empty_genesis_block() {
         genesis_state.compute_state_root().unwrap();
 
         genesis_state
-            .commit(genesis_epoch_id, &storage2::Database::write_schema())
+            .commit(genesis_epoch_id)
             .unwrap();
     }
 
@@ -63,7 +63,7 @@ fn test_set_get() {
     epoch_id.as_bytes_mut()[0] = 1;
     state.compute_state_root().unwrap();
     state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 }
 
@@ -95,7 +95,7 @@ fn test_get_set_at_second_commit() {
     epoch_id_0.as_bytes_mut()[0] = 1;
     state_0.compute_state_root().unwrap();
     state_0
-        .commit(epoch_id_0, &storage2::Database::write_schema())
+        .commit(epoch_id_0)
         .unwrap();
 
     let mut state_1 = state_manager
@@ -167,7 +167,7 @@ fn test_get_set_at_second_commit() {
     epoch_id_1.as_bytes_mut()[0] = 2;
     state_1.compute_state_root().unwrap();
     state_1
-        .commit(epoch_id_1, &storage2::Database::write_schema())
+        .commit(epoch_id_1)
         .unwrap();
 }
 
@@ -217,7 +217,7 @@ fn test_snapshot_random_read_performance() {
     let epoch_id_0 = H256::default();
     let mut state_root = state_0.compute_state_root().unwrap();
     state_0
-        .commit(epoch_id_0, &storage2::Database::write_schema())
+        .commit(epoch_id_0)
         .unwrap();
 
     println!("Committing initial {} epochs.", EPOCHS);
@@ -417,7 +417,7 @@ fn simulate_transactions(
     epoch_id.as_bytes_mut()[0] = epoch + 1;
     let state_root = state.compute_state_root().unwrap();
     state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
     *commit_ms += now.elapsed().as_millis() as u32;
 
@@ -452,7 +452,7 @@ fn test_set_delete() {
     epoch_id.as_bytes_mut()[0] = 1;
     state.compute_state_root().unwrap();
     state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     // In second state, insert part 2, then delete everything.
@@ -488,7 +488,7 @@ fn test_set_delete() {
     epoch_id.as_bytes_mut()[0] = 2;
     state.compute_state_root().unwrap();
     state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 }
 
@@ -524,7 +524,7 @@ fn test_set_delete_all() {
     epoch_id.as_bytes_mut()[0] = 1;
     state.compute_state_root().unwrap();
     state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     // In second state, insert part 2, then delete everything.
@@ -580,7 +580,7 @@ fn test_set_delete_all() {
     epoch_id.as_bytes_mut()[0] = 2;
     let state_root = state.compute_state_root().unwrap();
     state
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     assert_eq!(values.len(), keys.len());
@@ -614,7 +614,7 @@ fn test_set_order() {
     let _merkle_0 = state_0.compute_state_root().unwrap();
     epoch_id.as_bytes_mut()[0] = 1;
     state_0
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     let mut state_1 = state_manager.get_state_for_genesis_write();
@@ -633,7 +633,7 @@ fn test_set_order() {
     let merkle_1 = state_1.compute_state_root().unwrap();
     epoch_id.as_bytes_mut()[0] = 2;
     state_1
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     let mut state_2 = state_manager.get_state_for_genesis_write();
@@ -652,7 +652,7 @@ fn test_set_order() {
     let merkle_2 = state_2.compute_state_root().unwrap();
     epoch_id.as_bytes_mut()[0] = 3;
     state_2
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     assert_eq!(merkle_1, merkle_2);
@@ -687,7 +687,7 @@ fn test_set_order_concurrent() {
     let _merkle_0 = state_0.compute_state_root().unwrap();
     epoch_id.as_bytes_mut()[0] = 1;
     state_0
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     let parent_epoch_0 = epoch_id;
@@ -714,7 +714,7 @@ fn test_set_order_concurrent() {
     let merkle_1 = state_1.compute_state_root().unwrap();
     epoch_id.as_bytes_mut()[0] = 2;
     state_1
-        .commit(epoch_id, &storage2::Database::write_schema())
+        .commit(epoch_id)
         .unwrap();
 
     let thread_count = if cfg!(debug_assertions) {
@@ -759,7 +759,7 @@ fn test_set_order_concurrent() {
             epoch_id.as_bytes_mut()[0] = ((3 + thread_id) % 256) as u8;
             epoch_id.as_bytes_mut()[1] = ((3 + thread_id) / 256) as u8;
             state_2
-                .commit(epoch_id, &storage2::Database::write_schema())
+                .commit(epoch_id)
                 .unwrap();
 
             assert_eq!(merkle_1, merkle_2);
@@ -800,4 +800,3 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use storage2::DatabaseTrait;

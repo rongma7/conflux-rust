@@ -2,6 +2,7 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
+use cfx_storage2::StorageError;
 use primitives::account::AccountError;
 use std::{io, num};
 use thiserror::Error;
@@ -128,6 +129,9 @@ pub enum Error {
 
     #[error("{0}")]
     Msg(String),
+
+    #[error("Error from StorageError")]
+    StorageError(#[from] StorageError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

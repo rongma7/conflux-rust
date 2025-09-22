@@ -1,14 +1,10 @@
-#[macro_use]
-extern crate log;
-
 pub mod state;
 pub mod state_manager;
 pub use cfx_db_errors::storage as errors;
 pub use errors::{Error, Result};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use parking_lot::Mutex;
 
-use std::{borrow::Cow, collections::BTreeMap, fs, path::{Path, PathBuf}, sync::Arc};
+use std::{collections::BTreeMap, path::{Path, PathBuf}, sync::Arc};
 
 pub type MptKeyValue = (Vec<u8>, Box<[u8]>);
 pub use state::StateTrait as StorageStateTrait;
@@ -22,10 +18,9 @@ use cfx_internal_common::StateRootWithAuxInfo;
 pub use cfx_storage2::backends::DatabaseTrait;
 use cfx_storage2::{
     backends::{
-        impls::kvdb_rocksdb::open_database, TableName, TableReader,
-        TableSchema, WriteSchemaTrait,
+        impls::kvdb_rocksdb::WrappedRocksDb, HistoricalTableName, PendingTableName,
     },
-    LvmtStorage, LvmtStore,
+    LvmtStorage,
 };
 use cfx_types::Space;
 use ethereum_types::H256;
@@ -49,100 +44,6 @@ pub static AMT: Lazy<AmtParams<PE>> = Lazy::new(|| {
         None,
     )
 });
-pub type Database = kvdb_rocksdb::Database;
-
-#[derive(Clone, Copy)]
-pub struct StateRootTable;
-
-impl TableSchema for StateRootTable {
-    type Key = H256;
-    type Value = MerkleHash;
-
-    const NAME: TableName = TableName::StateRoot;
-}
-
-pub struct LvmtDatabase {
-    storage: Arc<Mutex<LvmtStorage<Database>>>,
-}
-
-impl LvmtDatabase {
-    pub fn new(storage: Arc<Mutex<LvmtStorage<Database>>>) -> Result<Self> {
-        Ok(Self {
-            storage: storage.clone(),
-        })
-    }
-
-    pub fn with_data<F, R>(&self, f: F) -> Result<R>
-    where F: FnOnce(&LvmtStore) -> Result<R> {
-        let storage_guard = self.storage.lock();
-        let data = storage_guard.as_manager().map_err(|_| {
-            Error::Msg("Err in LvmtStorage::as_manager()".into())
-        })?;
-
-        let result = f(&data)?;
-
-        drop(data);
-
-        Ok(result)
-    }
-
-    pub fn with_state_roots<F, R>(&self, f: F) -> Result<R>
-    where F: FnOnce(&TableReader<'_, StateRootTable>) -> Result<R> {
-        let state_roots = Arc::new(
-            self.storage
-                .lock()
-                .get_backend()
-                .view::<StateRootTable>()
-                .map_err(|_| {
-                    Error::Msg("Err in get view of StateRootTable".into())
-                })?,
-        );
-
-        let state_roots_reader: TableReader<'_, StateRootTable> = state_roots;
-        let result = f(&state_roots_reader)?;
-
-        drop(state_roots_reader);
-
-        Ok(result)
-    }
-
-    pub fn commit(
-        &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
-    ) -> Result<()> {
-        let mut storage_guard = self.storage.lock();
-        storage_guard
-            .commit(write_schema)
-            .map_err(|_| Error::Msg("Err in commit write_schema to db".into()))
-    }
-
-    pub fn make_pivot(&self, commit_id: H256) -> Result<bool> {
-        let storage_guard = self.storage.lock();
-        storage_guard
-            .make_pivot(commit_id)
-            .map_err(|_| Error::Msg("Err in make_pivot".into()))
-    }
-
-    pub fn is_newer_than_pending_root(&self, height: u64) -> bool {
-        let storage_guard = self.storage.lock();
-        storage_guard.is_newer_than_pending_root(height)
-    }
-
-    pub fn confirmed_pending_to_history(
-        &self, new_root_height: u64, pivot_commit_id: H256,
-        write_schema: &<Database as DatabaseTrait>::WriteSchema,
-    ) -> Result<()> {
-        let storage_guard = self.storage.lock();
-        storage_guard
-            .confirmed_pending_to_history_with_height(
-                new_root_height,
-                pivot_commit_id,
-                write_schema,
-            )
-            .map_err(|_| {
-                Error::Msg("Err in confirmed_pending_to_history".into())
-            })
-    }
-}
 
 pub struct LvmtView {
     // pub state: LvmtSnapshot<'static>,
@@ -150,7 +51,7 @@ pub struct LvmtView {
 }
 
 pub struct LvmtState {
-    manager: Arc<LvmtStateManager>,
+    backend: Arc<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>,
     /// `None` for writable LvmtState to create genesis.
     /// `Some()` for read-only LvmtState indicating this epoch_id, or for
     /// writable LvmtState indicating parent_epoch_id.
@@ -167,7 +68,7 @@ pub struct LvmtState {
 }
 
 pub struct LvmtStateManager {
-    backend: Arc<LvmtDatabase>,
+    backend: Arc<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>,
 }
 
 impl MallocSizeOf for LvmtStateManager {
@@ -178,33 +79,14 @@ impl MallocSizeOf for LvmtStateManager {
 }
 
 impl LvmtStateManager {
-    pub fn new_arc(db_path: PathBuf) -> Arc<Self> {
-        if !db_path.exists() {
-            fs::create_dir_all(&db_path).expect("db path create error");
-        }
-
-        let db = open_database(
-            TableName::max_index() + 1,
-            db_path.to_str().expect("Path contains invalid UTF-8"),
-        )
-        .expect("LvmtDb initialize error");
-        let lvmt_storage = LvmtStorage::new(Arc::new(db))
-            .expect("LvmtStorage initialize error");
-        let backend = Arc::new(
-            LvmtDatabase::new(Arc::new(Mutex::new(lvmt_storage)))
-                .expect("LvmtDatabase initialize error"),
-        );
-        Arc::new(Self { backend })
-    }
-
-    pub fn commit(
-        &self, write_schema: <Database as DatabaseTrait>::WriteSchema,
-    ) -> Result<()> {
-        self.backend.commit(write_schema)
+    pub fn new_arc(historical_db_path: PathBuf, pending_db_path: PathBuf) -> Arc<Self> {
+        let lvmt_storage = LvmtStorage::new_from_paths(&historical_db_path, &pending_db_path)
+            .expect("LvmtStorage initialization failed");
+        Arc::new(Self { backend: lvmt_storage })
     }
 
     pub fn make_pivot(&self, commit_id: H256) -> Result<bool> {
-        self.backend.make_pivot(commit_id)
+        Ok(self.backend.make_pivot(commit_id)?)
     }
 
     pub fn is_newer_than_pending_root(&self, height: u64) -> bool {
@@ -213,13 +95,11 @@ impl LvmtStateManager {
 
     pub fn confirmed_pending_to_history(
         &self, new_root_height: u64, pivot_commit_id: H256,
-        write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<()> {
-        self.backend.confirmed_pending_to_history(
+        Ok(self.backend.confirmed_pending_to_history_with_height(
             new_root_height,
             pivot_commit_id,
-            write_schema,
-        )
+        )?)
     }
 }
 
@@ -254,18 +134,12 @@ impl LvmtState {
         let mut keys_values: BTreeMap<Box<[u8]>, Box<[u8]>> =
             if let Some(view) = &self.base_state {
                 let epoch_id = view.epoch_id;
-                self.manager.backend.with_data(|data| {
-                    Ok(data
-                        .iter_prefix(epoch_id, key_prefix.clone())
-                        .map_err(|_| {
-                            Error::Msg("Err in LvmtStore::iter_prefix".into())
-                        })?
-                        .into_iter()
-                        .map(|(key, lvmt_value)| (key, lvmt_value.get_value()))
-                        .filter(|(_, value)| value.is_some())
-                        .map(|(key, value)| (key, value.unwrap()))
-                        .collect())
-                })?
+                self.backend.as_manager()?.iter_prefix(epoch_id, key_prefix.clone())?
+                    .into_iter()
+                    .map(|(key, lvmt_value)| (key, lvmt_value.get_value()))
+                    .filter(|(_, value)| value.is_some())
+                    .map(|(key, value)| (key, value.unwrap()))
+                    .collect()
             } else {
                 BTreeMap::new()
             };
@@ -336,15 +210,9 @@ impl StorageStateTrait for LvmtState {
         // not in changes, then get from backend
         if let Some(view) = &self.base_state {
             let epoch_id = view.epoch_id;
-            Ok(self.manager.backend.with_data(|data| {
-                Ok(data
-                    .get(epoch_id, key)
-                    .map_err(|_| {
-                        Error::Msg("Fail to get from LvmtStore".into())
-                    })?
-                    .map(|v| v.get_value())
-                    .flatten())
-            })?)
+            Ok(self.backend.as_manager()?.get(epoch_id, key)?
+                .map(|v| v.get_value())
+                .flatten())
         } else {
             Ok(None)
         }
@@ -420,32 +288,19 @@ impl StorageStateTrait for LvmtState {
     // commit() write LvmtStateManager
     fn commit(
         &mut self, epoch: EpochId,
-        write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
-        if self.manager.backend.with_data(|data| {
-            Ok(data
-                .query_commit_existence(&epoch)
-                .map_err(|e| {dbg!(e); Error::Msg("Fail to query_commit_existence in LvmtStore".into())})?)
-        })? {
-            let maybe_state_root =
-                self.manager.backend.with_state_roots(|state_roots| {
-                    Ok(state_roots
-                        .get(&epoch)
-                        .map_err(|_| {
-                            Error::Msg("Err in reading StateRootTable".into())
-                        })?
-                        .map(|sr| sr.into_owned()))
-                })?;
+        // Case 1: handle already existing epoch
+        let manager = self.backend.as_manager()?;
+
+        if manager.query_commit_existence(&epoch)? {
+            let maybe_state_root = manager.get_state_root(epoch)?;
             let state_root = maybe_state_root.expect("State root should be existing for existing commit in Lvmt");
             return Ok(StateRootWithAuxInfo::genesis(&state_root))
         }
 
-        info!(
-            "Before commit to pending part. Backend strong_count: {}, weak_count: {}",
-            Arc::strong_count(&self.manager.backend),
-            Arc::weak_count(&self.manager.backend)
-        );
+        drop(manager);
 
+        // Case 2: handle new epoch
         let state_root = self.compute_state_root_inner()?;
         let changes_inner = self
             .changes
@@ -453,36 +308,16 @@ impl StorageStateTrait for LvmtState {
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
 
-        // commit state_root
-        write_schema.write::<StateRootTable>((
-            Cow::Owned(epoch),
-            Some(Cow::Owned(state_root)),
-        ));
         // commit data (to pending part)
-        self.manager.backend.with_data(|data| {
-            Ok(data
-                .commit(
-                    self.base_state.as_ref().map(|state| state.epoch_id),
-                    epoch,
-                    changes_inner.into_iter(),
-                    &write_schema,
-                    &AMT,
-                )
-                .map_err(|e| {dbg!(e); Error::Msg("Fail to commit LvmtStore".into())})?)
-        })?;
+        self.backend.as_manager()?.commit(
+            self.base_state.as_ref().map(|state| state.epoch_id),
+            epoch,
+            state_root,
+            changes_inner.into_iter(),
+            &AMT,
+        )?;
         // commit data (to historical part) // TODO: how to determine new_root
-        // self.manager.backend.storage.confirmed_pending_to_history(todo!(),
-        // &write_schema);
-
-        // TODO: should invoke backend.backend.commit to make sure all data in
-        // write_schema are written,       this invocation should be
-        // outside commit() function but before any read operation of any state.
-
-        info!(
-            "After commit to pending part. Backend strong_count: {}, weak_count: {}",
-            Arc::strong_count(&self.manager.backend),
-            Arc::weak_count(&self.manager.backend)
-        );
+        // self.manager.backend.storage.confirmed_pending_to_history(todo!());
 
         Ok(StateRootWithAuxInfo::genesis(&state_root))
     }
@@ -492,15 +327,7 @@ impl LvmtStateManager {
     pub fn get_state_no_commit_inner(
         self: &Arc<Self>, epoch_id: StateIndex
     ) -> Result<Option<LvmtState>> {
-        let maybe_state_root =
-            self.backend.with_state_roots(|state_roots| {
-                Ok(state_roots
-                    .get(&epoch_id.epoch_id)
-                    .map_err(|_| {
-                        Error::Msg("Err in reading StateRootTable".into())
-                    })?
-                    .map(|sr| sr.into_owned()))
-            })?;
+        let maybe_state_root = self.backend.as_manager()?.get_state_root(epoch_id.epoch_id)?;
 
         if maybe_state_root.is_none() {
             return Ok(None);
@@ -508,7 +335,7 @@ impl LvmtStateManager {
 
         if let Some(state_root) = maybe_state_root {
             Ok(Some(LvmtState {
-                manager: self.clone(),
+                backend: self.backend.clone(),
                 base_state: Some(LvmtView {
                     epoch_id: epoch_id.epoch_id,
                 }),
@@ -535,7 +362,7 @@ impl StorageManagerTrait for LvmtStateManager {
         _recover_mpt_during_construct_pivot_state: bool,
     ) -> Result<Option<Box<dyn StorageStateTrait>>> {
         Ok(Some(Box::new(LvmtState {
-            manager: self.clone(),
+            backend: self.backend.clone(),
             base_state: Some(LvmtView {
                 epoch_id: parent_epoch_id.epoch_id,
             }),
@@ -549,7 +376,7 @@ impl StorageManagerTrait for LvmtStateManager {
         self: &Arc<Self>,
     ) -> Box<dyn StorageStateTrait> {
         Box::new(LvmtState {
-            manager: self.clone(),
+            backend: self.backend.clone(),
             base_state: None,
             changes: Some(BTreeMap::new()),
             cached_state_root: None,

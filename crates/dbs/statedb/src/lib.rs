@@ -497,7 +497,6 @@ mod impls {
         pub fn commit(
             &mut self, epoch_id: EpochId,
             mut debug_record: Option<&mut ComputeEpochDebugRecord>,
-            write_schema: &<Database as DatabaseTrait>::WriteSchema,
         ) -> Result<StateRootWithAuxInfo> {
             self.apply_changes_to_storage(debug_record.as_deref_mut())?;
 
@@ -506,7 +505,7 @@ mod impls {
                 Err(_) => self.compute_state_root(debug_record)?,
             };
 
-            self.storage.commit(epoch_id, write_schema)?;
+            self.storage.commit(epoch_id)?;
 
             Ok(result)
         }
@@ -545,7 +544,7 @@ mod impls {
     };
     use cfx_storage::{
         utils::{access_mode, to_key_prefix_iter_upper_bound},
-        Database, DatabaseTrait, MptKeyValue, StorageStateTrait,
+        MptKeyValue, StorageStateTrait,
     };
     use cfx_types::{
         address_util::AddressUtil, Address, AddressWithSpace, Space,

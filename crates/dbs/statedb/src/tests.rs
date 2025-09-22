@@ -5,7 +5,7 @@
 use super::StateDbGeneric;
 use cfx_internal_common::StateRootWithAuxInfo;
 use cfx_storage::{
-    utils::access_mode, Database, DatabaseTrait, Error, MptKeyValue, Result,
+    utils::access_mode, Error, MptKeyValue, Result,
     StorageStateTrait,
 };
 use parking_lot::Mutex;
@@ -50,7 +50,6 @@ impl MockStorage {
 impl StorageStateTrait for MockStorage {
     fn commit(
         &mut self, epoch: EpochId,
-        _write_schema: &<Database as DatabaseTrait>::WriteSchema,
     ) -> Result<StateRootWithAuxInfo> {
         self.compute_state_root()
     }
@@ -199,9 +198,8 @@ fn test_basic() {
         .delete_all::<access_mode::Write>(storage_key(b"0"), None)
         .unwrap();
 
-    let write_schema = Database::write_schema();
     state_db
-        .commit(MERKLE_NULL_NODE, None, &write_schema)
+        .commit(MERKLE_NULL_NODE, None)
         .unwrap();
     // FIXME(lpl): Enable tests.
     // let storage = (state_db.get_storage_mut() as &dyn
