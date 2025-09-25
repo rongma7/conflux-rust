@@ -4,7 +4,7 @@ pub use cfx_db_errors::storage as errors;
 pub use errors::{Error, Result};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 
-use std::{collections::BTreeMap, path::{Path, PathBuf}, sync::Arc};
+use std::{collections::BTreeMap, ops::Bound, path::{Path, PathBuf}, sync::Arc};
 
 pub type MptKeyValue = (Vec<u8>, Box<[u8]>);
 pub use state::StateTrait as StorageStateTrait;
@@ -26,8 +26,7 @@ use cfx_types::Space;
 use ethereum_types::H256;
 use once_cell::sync::Lazy;
 use primitives::{
-    DeltaMptKeyPadding, EpochId, MerkleHash, StorageKeyWithSpace,
-    MERKLE_NULL_NODE,
+    EpochId, MerkleHash, StorageKeyWithSpace,
 };
 use tiny_keccak::{Hasher, Keccak};
 
@@ -63,8 +62,6 @@ pub struct LvmtState {
     /// `Some()` only for writable LvmtState after invoking
     /// compute_state_root().
     cached_state_root: Option<MerkleHash>,
-    /// Information obtained from `StateIndex`.
-    delta_trie_key_padding: DeltaMptKeyPadding,
 }
 
 pub struct LvmtStateManager {
@@ -121,20 +118,20 @@ impl LvmtState {
         &mut self, access_key: StorageKeyWithSpace, value: Option<Box<[u8]>>,
     ) -> Result<()> {
         let key = access_key
-            .to_delta_mpt_key_bytes(&self.delta_trie_key_padding)
+            .to_key_bytes()
             .into_boxed_slice();
         self.change(key, value)
     }
 
     /// Gets all existing keys prefixed with access_key_prefix.
     fn read_all_inner(
-        &self, key_prefix: Box<[u8]>,
+        &self, lower_bound_incl: Box<[u8]>, upper_bound_excl: Option<Box<[u8]>>,
     ) -> Result<Option<Vec<MptKeyValue>>> {
         // get from backend
         let mut keys_values: BTreeMap<Box<[u8]>, Box<[u8]>> =
             if let Some(view) = &self.base_state {
                 let epoch_id = view.epoch_id;
-                self.backend.as_manager()?.iter_prefix(epoch_id, key_prefix.clone())?
+                self.backend.as_manager()?.iter_range(epoch_id, lower_bound_incl.clone(), upper_bound_excl.clone())?
                     .into_iter()
                     .map(|(key, lvmt_value)| (key, lvmt_value.get_value()))
                     .filter(|(_, value)| value.is_some())
@@ -146,10 +143,13 @@ impl LvmtState {
 
         // get from changes, overwrite directly for the same keys
         if let Some(changes) = &self.changes {
-            for (key, value) in changes.range(key_prefix.clone()..) {
-                if !key.as_ref().starts_with(key_prefix.as_ref()) {
-                    break;
-                }
+            let start_bound = Bound::Included(lower_bound_incl);
+
+            let end_bound = match &upper_bound_excl {
+                Some(upper) => Bound::Excluded(upper.clone()),
+                None => Bound::Unbounded,
+            };
+            for (key, value) in changes.range((start_bound, end_bound)) {
                 match value {
                     Some(existing_value) => {
                         keys_values.insert(key.clone(), existing_value.clone())
@@ -177,7 +177,7 @@ impl LvmtState {
         }
 
         let mut x = Keccak::v256();
-        let iter_all = self.read_all_inner(Box::from([]))?.unwrap_or_default();
+        let iter_all = self.read_all_inner(Box::from([]), None)?.unwrap_or_default();
 
         iter_all.iter().for_each(|(k, v)| {
             x.update(&k);
@@ -197,7 +197,7 @@ impl StorageStateTrait for LvmtState {
         &self, access_key: StorageKeyWithSpace,
     ) -> Result<Option<Box<[u8]>>> {
         let key = access_key
-            .to_delta_mpt_key_bytes(&self.delta_trie_key_padding)
+            .to_key_bytes()
             .into_boxed_slice();
 
         // get from changes
@@ -224,18 +224,8 @@ impl StorageStateTrait for LvmtState {
         self.change_for_access_key(access_key, Some(value))
     }
 
-    // TODO: is it valid to delete a non-existing key? delete() deals with this
-    // err.
     fn delete(&mut self, access_key: StorageKeyWithSpace) -> Result<()> {
-        let old_value = self.get(access_key)?;
-        if old_value.is_none() {
-            Err(Error::Msg(
-                "Attempted to delete a non-existing key from a storage state"
-                    .into(),
-            ))
-        } else {
-            self.change_for_access_key(access_key, None)
-        }
+        self.change_for_access_key(access_key, None)
     }
 
     fn delete_test_only(
@@ -266,10 +256,9 @@ impl StorageStateTrait for LvmtState {
     fn read_all(
         &mut self, access_key_prefix: StorageKeyWithSpace,
     ) -> Result<Option<Vec<MptKeyValue>>> {
-        let key_prefix = access_key_prefix
-            .to_delta_mpt_key_bytes(&self.delta_trie_key_padding)
-            .into_boxed_slice();
-        self.read_all_inner(key_prefix)
+        let lower_bound_incl = access_key_prefix.to_key_bytes().into_boxed_slice();
+        let upper_bound_excl = to_key_prefix_iter_upper_bound(&lower_bound_incl).map(|x| x.into_boxed_slice());
+        self.read_all_inner(lower_bound_incl, upper_bound_excl)
     }
 
     // compute_state_root() does not write LvmtStateManager
@@ -341,7 +330,6 @@ impl LvmtStateManager {
                 }),
                 changes: None,
                 cached_state_root: Some(state_root),
-                delta_trie_key_padding: epoch_id.delta_mpt_key_padding,
             }))
         } else {
             Ok(None)
@@ -368,7 +356,6 @@ impl StorageManagerTrait for LvmtStateManager {
             }),
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
-            delta_trie_key_padding: parent_epoch_id.delta_mpt_key_padding,
         })))
     }
 
@@ -380,10 +367,33 @@ impl StorageManagerTrait for LvmtStateManager {
             base_state: None,
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
-            delta_trie_key_padding: StorageKeyWithSpace::delta_mpt_padding(
-                &MERKLE_NULL_NODE,
-                &MERKLE_NULL_NODE,
-            ),
         })
+    }
+}
+
+// TODO: add comments and unit tests
+pub fn to_key_prefix_iter_upper_bound(key_prefix: &[u8]) -> Option<Vec<u8>> {
+    let mut upper_bound_excl_value = key_prefix.to_vec();
+    if upper_bound_excl_value.len() == 0 {
+        None
+    } else {
+        let mut carry = 1;
+        let len = upper_bound_excl_value.len();
+        for i in 0..len {
+            if upper_bound_excl_value[len - 1 - i] == 255 {
+                upper_bound_excl_value[len - 1 - i] = 0;
+            } else {
+                upper_bound_excl_value[len - 1 - i] += 1;
+                carry = 0;
+                break;
+            }
+        }
+        // all bytes in lower_bound_incl are 255, which means no upper bound
+        // is needed.
+        if carry == 1 {
+            None
+        } else {
+            Some(upper_bound_excl_value)
+        }
     }
 }

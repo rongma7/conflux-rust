@@ -13,4 +13,4 @@ rlp = { workspace = true }
 sqlite = { workspace = true }
 strfmt = { workspace = true }
 thiserror ={ workspace = true }
-cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "2637a4c" }
+cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "f608f57" }

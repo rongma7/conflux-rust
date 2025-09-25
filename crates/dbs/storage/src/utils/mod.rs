@@ -9,32 +9,7 @@ pub mod tuple;
 pub mod guarded_value;
 pub mod wrap;
 
-// TODO: add comments and unit tests
-pub fn to_key_prefix_iter_upper_bound(key_prefix: &[u8]) -> Option<Vec<u8>> {
-    let mut upper_bound_excl_value = key_prefix.to_vec();
-    if upper_bound_excl_value.len() == 0 {
-        None
-    } else {
-        let mut carry = 1;
-        let len = upper_bound_excl_value.len();
-        for i in 0..len {
-            if upper_bound_excl_value[len - 1 - i] == 255 {
-                upper_bound_excl_value[len - 1 - i] = 0;
-            } else {
-                upper_bound_excl_value[len - 1 - i] += 1;
-                carry = 0;
-                break;
-            }
-        }
-        // all bytes in lower_bound_incl are 255, which means no upper bound
-        // is needed.
-        if carry == 1 {
-            None
-        } else {
-            Some(upper_bound_excl_value)
-        }
-    }
-}
+pub use storage2::to_key_prefix_iter_upper_bound;
 
 pub mod access_mode {
     pub trait AccessMode {

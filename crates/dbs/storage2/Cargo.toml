@@ -7,7 +7,7 @@ version = "1.0.0"
 edition = "2021"
 
 [dependencies]
-cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "2637a4c" }
+cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "f608f57" }
 ethereum-types = { workspace = true }
 parking_lot = { workspace = true }
 cfx-internal-common = { workspace = true }
