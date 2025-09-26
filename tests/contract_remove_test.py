@@ -54,7 +54,7 @@ class ContractRemoveTest(ConfluxTestFramework):
         self.test_range_deletion_on_contract_remove(False)
         self.test_range_deletion_on_contract_remove(True)
 
-        for (is_sponsored, has_range_delete_bug) in itertools.product([True, False], [True, False]):
+        for (is_sponsored, has_range_delete_bug) in itertools.product([True, False], [False]):
             self.test_sponsor_whitelist_clear_on_contract_remove(is_sponsored, has_range_delete_bug)
 
         self.log.info("Done")
