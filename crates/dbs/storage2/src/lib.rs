@@ -59,8 +59,9 @@ pub struct LvmtState {
     /// `None` for read-only LvmtState.
     /// `Some()` for writable LvmtState.
     changes: Option<BTreeMap<Box<[u8]>, Option<Box<[u8]>>>>,
-    /// `Some()` only for writable LvmtState after invoking
-    /// compute_state_root().
+    /// The state_root of this epoch_id, not of the parent_epoch_id, even for the writable LvmtState.
+    /// For read-only LvmtState, `None` is unreachable.
+    /// For writable LvmtState, `Some` means after invoking `compute_state_root()`, `None` means before invoking `compute_state_root()`.
     cached_state_root: Option<MerkleHash>,
 }
 
