@@ -3,6 +3,7 @@ pub mod state_manager;
 pub use cfx_db_errors::storage as errors;
 pub use errors::{Error, Result};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
+use parking_lot::Mutex;
 
 use std::{collections::BTreeMap, ops::Bound, path::{Path, PathBuf}, sync::Arc};
 
@@ -50,7 +51,7 @@ pub struct LvmtView {
 }
 
 pub struct LvmtState {
-    backend: Arc<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>,
+    backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
     /// `None` for writable LvmtState to create genesis.
     /// `Some()` for read-only LvmtState indicating this epoch_id, or for
     /// writable LvmtState indicating parent_epoch_id.
@@ -66,7 +67,7 @@ pub struct LvmtState {
 }
 
 pub struct LvmtStateManager {
-    backend: Arc<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>,
+    backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
 }
 
 impl MallocSizeOf for LvmtStateManager {
@@ -80,21 +81,24 @@ impl LvmtStateManager {
     pub fn new_arc(historical_db_path: PathBuf, pending_db_path: PathBuf) -> Arc<Self> {
         let lvmt_storage = LvmtStorage::new_from_paths(&historical_db_path, &pending_db_path)
             .expect("LvmtStorage initialization failed");
-        Arc::new(Self { backend: lvmt_storage })
+        Arc::new(Self { backend: Arc::new(Mutex::new(lvmt_storage)) })
     }
 
     pub fn make_pivot(&self, commit_id: H256) -> Result<bool> {
-        Ok(self.backend.make_pivot(commit_id)?)
+        let mut guard = self.backend.lock();
+        let mut manager = guard.as_manager()?;
+        Ok(manager.make_pivot(commit_id)?)
     }
 
-    pub fn is_newer_than_pending_root(&self, height: u64) -> bool {
-        self.backend.is_newer_than_pending_root(height)
+    pub fn is_newer_than_pending_root(&self, height: u64) -> Result<bool> {
+        Ok(self.backend.lock().as_manager()?.is_newer_than_pending_root(height))
     }
 
     pub fn confirmed_pending_to_history(
         &self, new_root_height: u64, pivot_commit_id: H256,
     ) -> Result<()> {
-        Ok(self.backend.confirmed_pending_to_history_with_height(
+        let mut guard = self.backend.lock();
+        Ok(guard.confirmed_pending_to_history_with_height(
             new_root_height,
             pivot_commit_id,
         )?)
@@ -132,7 +136,7 @@ impl LvmtState {
         let mut keys_values: BTreeMap<Box<[u8]>, Box<[u8]>> =
             if let Some(view) = &self.base_state {
                 let epoch_id = view.epoch_id;
-                self.backend.as_manager()?.iter_range(epoch_id, lower_bound_incl.clone(), upper_bound_excl.clone())?
+                self.backend.lock().as_manager()?.iter_range(epoch_id, lower_bound_incl.clone(), upper_bound_excl.clone())?
                     .into_iter()
                     .map(|(key, lvmt_value)| (key, lvmt_value.get_value()))
                     .filter(|(_, value)| value.is_some())
@@ -211,7 +215,7 @@ impl StorageStateTrait for LvmtState {
         // not in changes, then get from backend
         if let Some(view) = &self.base_state {
             let epoch_id = view.epoch_id;
-            Ok(self.backend.as_manager()?.get(epoch_id, key)?
+            Ok(self.backend.lock().as_manager()?.get(epoch_id, key)?
                 .map(|v| v.get_value())
                 .flatten())
         } else {
@@ -279,16 +283,20 @@ impl StorageStateTrait for LvmtState {
     fn commit(
         &mut self, epoch: EpochId,
     ) -> Result<StateRootWithAuxInfo> {
+        // This function is the only function that add a commit.
+        // The function uses &mut, so it will cannot be invoked concurrently.
+        // So the self.backend.lock() has no need to work entirely.
+
         // Case 1: handle already existing epoch
-        let manager = self.backend.as_manager()?;
-
-        if manager.query_commit_existence(&epoch)? {
-            let maybe_state_root = manager.get_state_root(epoch)?;
-            let state_root = maybe_state_root.expect("State root should be existing for existing commit in Lvmt");
-            return Ok(StateRootWithAuxInfo::genesis(&state_root))
+        {
+            let mut guard = self.backend.lock();
+            let manager = guard.as_manager()?;
+            if manager.query_commit_existence(&epoch)? {
+                let maybe_state_root = manager.get_state_root(epoch)?;
+                let state_root = maybe_state_root.expect("State root should be existing for existing commit in Lvmt");
+                return Ok(StateRootWithAuxInfo::genesis(&state_root))
+            }
         }
-
-        drop(manager);
 
         // Case 2: handle new epoch
         let state_root = self.compute_state_root_inner()?;
@@ -299,7 +307,9 @@ impl StorageStateTrait for LvmtState {
             .unwrap_or_default();
 
         // commit data (to pending part)
-        self.backend.as_manager()?.commit(
+        let mut guard = self.backend.lock();
+        let mut manager = guard.as_manager()?;
+        manager.commit(
             self.base_state.as_ref().map(|state| state.epoch_id),
             epoch,
             state_root,
@@ -317,7 +327,7 @@ impl LvmtStateManager {
     pub fn get_state_no_commit_inner(
         self: &Arc<Self>, epoch_id: StateIndex
     ) -> Result<Option<LvmtState>> {
-        let maybe_state_root = self.backend.as_manager()?.get_state_root(epoch_id.epoch_id)?;
+        let maybe_state_root = self.backend.lock().as_manager()?.get_state_root(epoch_id.epoch_id)?;
 
         if maybe_state_root.is_none() {
             return Ok(None);
