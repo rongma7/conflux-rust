@@ -45,6 +45,11 @@ pub struct LvmtStateManagerWithConf {
     pub intermediate_trie_root_merkle: RwLock<Option<MerkleHash>>,
     pub persist_state_from_initialization:
         RwLock<Option<(Option<EpochId>, HashSet<EpochId>, u64, Option<u64>)>>,
+
+    // A dedicated lock for this specific maintenance operation.
+    // The `()` in `Mutex<()>` indicates this mutex is used for mutual exclusion only,
+    // not for protecting any data.
+    maintenance_lock: Mutex<()>,
 }
 
 impl LvmtStateManagerWithConf {
@@ -58,6 +63,7 @@ impl LvmtStateManagerWithConf {
             storage_conf,
             intermediate_trie_root_merkle: RwLock::new(None),
             persist_state_from_initialization: RwLock::new(None),
+            maintenance_lock: Mutex::new(()),
         })
     }
 }
@@ -88,6 +94,20 @@ impl LvmtStateManagerWithConf {
         confirmed_height: u64,
         state_availability_boundary: &RwLock<StateAvailabilityBoundary>,
     ) -> Result<()> {
+        // ------------------------------------------------------------------
+        // Acquire the lock at the function's entry point. This serializes all
+        // concurrent calls to this function.
+        // ------------------------------------------------------------------
+        // Once a thread acquires the lock, any other threads attempting to call this
+        // function will block here. The `_` in `_guard` signifies that the
+        // variable is intentionally unused; its lifetime is what's critical. The lock
+        // is automatically released when `_guard` goes out of scope (RAII).
+        //
+        // No deadlock risk: This lock is private and internal to this module. No
+        // other code can lock `state_availability_boundary` or `lvmt_manager` first
+        // and then attempt to acquire `maintenance_lock`, thus preventing a circular wait.
+        let _guard = self.maintenance_lock.lock();
+
         // compute `maintained_state_height_lower_bound`
         let additional_state_height_gap =
             (self.storage_conf.additional_maintained_snapshot_count
@@ -133,7 +153,7 @@ impl LvmtStateManagerWithConf {
             self.lvmt_manager.make_pivot(maintained_epoch_id)?;
         let adjust_pending_root = self
             .lvmt_manager
-            .is_newer_than_pending_root(first_available_state_height);
+            .is_newer_than_pending_root(first_available_state_height)?;
         if non_pivot_removed || adjust_pending_root {
             {
                 // TODO: Archive node may do something different.
@@ -155,6 +175,19 @@ impl LvmtStateManagerWithConf {
         }
 
         info!("maintain_state_confirmed: finished");
+
+        // TODO: background_cleanup. Put the above codes in a code block first.
+        // let storage_clone_for_cleanup = self.clone();
+        // task::spawn(async move {
+        //     log!("[Cleanup Task] Started background cleanup.");
+
+        //     // storage_clone_for_cleanup.cleanup_old_files().await;
+
+        //     info!("[Cleanup Task] Background cleanup finished.");
+        // });
+
+        // info!("[Main Task] Function returning immediately, cleanup is running in background.");
+        
         Ok(())
     }
 
@@ -268,7 +301,7 @@ use cfx_internal_common::{
 };
 use cfx_types::Space;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use primitives::{EpochId, MerkleHash};
 use std::{
     collections::HashSet, ops::{Deref, DerefMut}, sync::{
