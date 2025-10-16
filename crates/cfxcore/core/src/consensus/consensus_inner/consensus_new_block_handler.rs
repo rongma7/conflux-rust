@@ -1948,9 +1948,8 @@ impl ConsensusNewBlockHandler {
         {
             let mut state_availability_boundary =
                 self.data_man.state_availability_boundary.write();
-            assert!(
-                state_availability_boundary.lower_bound
-                    == state_availability_boundary.upper_bound
+            assert_eq!(
+                state_availability_boundary.lower_bound, state_availability_boundary.upper_bound
             );
             for pivot_index in start_pivot_index + 1..inner.pivot_chain.len() {
                 state_availability_boundary
