@@ -28,7 +28,7 @@ pub mod consensus {
     // around 2 million transaction.
     // pub const SNAPSHOT_EPOCHS_CAPACITY: u32 = 2000;
     // In storage2, every `SNAPSHOT_EPOCHS_CAPACITY` commits, call `confirmed_pending_to_history`.
-    pub const SNAPSHOT_EPOCHS_CAPACITY: u32 = 20;
+    pub const SNAPSHOT_EPOCHS_CAPACITY: u32 = 2000;
 
     pub const NULL: usize = !0;
     pub const NULLU64: u64 = !0;
