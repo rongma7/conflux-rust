@@ -26,13 +26,13 @@ parity-util-mem = { workspace = true, default-features = false }
 default-features = false
 features = ["snappy"]
 git = "https://github.com/rongma7/rust-rocksdb"
-rev = "9183fa9"
+rev = "261fcc4"
 
 [target.'cfg(not(any(target_os = "openbsd", target_env = "msvc")))'.dependencies.rocksdb]
 default-features = false
 features = ["snappy", "jemalloc"]
 git = "https://github.com/rongma7/rust-rocksdb"
-rev = "9183fa9"
+rev = "261fcc4"
 
 [dev-dependencies]
 tempfile = { workspace = true }
