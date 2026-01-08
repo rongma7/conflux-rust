@@ -30,6 +30,7 @@ use primitives::{
     EpochId, MerkleHash, StorageKeyWithSpace,
 };
 use tiny_keccak::{Hasher, Keccak};
+use log::{error, info};
 
 pub type PE = ark_bls12_381::Bls12_381;
 pub const TEST_LEVEL: usize = 16;
@@ -50,8 +51,15 @@ pub struct LvmtView {
     pub epoch_id: H256,
 }
 
+impl Drop for LvmtState {
+    fn drop(&mut self) {
+        let storage_arc_count = Arc::strong_count(&self.backend);
+        info!(">>> LvmtState::drop: Arc<Mutex<LvmtStorage>> refcount: {}", storage_arc_count);
+    }
+}
+
 pub struct LvmtState {
-    backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
+    pub backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
     /// `None` for writable LvmtState to create genesis.
     /// `Some()` for read-only LvmtState indicating this epoch_id, or for
     /// writable LvmtState indicating parent_epoch_id.
@@ -64,6 +72,20 @@ pub struct LvmtState {
     /// For read-only LvmtState, `None` is unreachable.
     /// For writable LvmtState, `Some` means after invoking `compute_state_root()`, `None` means before invoking `compute_state_root()`.
     cached_state_root: Option<MerkleHash>,
+}
+
+impl Drop for LvmtStateManager {
+    fn drop(&mut self) {
+        let storage_arc_count = Arc::strong_count(&self.backend);
+        info!("=== LvmtStateManager::drop START ===");
+        info!("Arc<Mutex<LvmtStorage>> refcount: {}", storage_arc_count);
+        
+        if storage_arc_count > 1 {
+            error!("WARNING: LvmtStorage is still referenced by {} other owners!", storage_arc_count - 1);
+        }
+        
+        info!("=== LvmtStateManager::drop END ===");
+    }
 }
 
 pub struct LvmtStateManager {

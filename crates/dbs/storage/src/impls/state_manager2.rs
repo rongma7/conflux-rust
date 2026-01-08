@@ -2,7 +2,48 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
+impl Drop for LvmtStateManagerWithConf {
+    fn drop(&mut self) {
+        let arc_count = Arc::strong_count(&self.lvmt_manager);
+        info!("=== LvmtStateManagerWithConf::drop START ===");
+        info!("Arc<LvmtStateManager> refcount: {}", arc_count);
+        
+        // 如果 arc_count > 1，说明还有其他地方持有引用
+        if arc_count > 1 {
+            error!("WARNING: LvmtStateManager is still referenced by {} other owners!", arc_count - 1);
+        }
+        
+        info!("Attempting to acquire write lock on shutdown_lock...");
+        let mut shutdown_guard = self.shutdown_lock.write();
+        info!("Write lock acquired!");
+        
+        *shutdown_guard = true;
+        
+        let final_arc_count = Arc::strong_count(&self.lvmt_manager);
+        info!("=== LvmtStateManagerWithConf::drop END ===");
+        info!("Arc<LvmtStateManager> final refcount: {}", final_arc_count);
+        
+        // 如果 final_arc_count > 1，LvmtStateManager 不会被 drop！
+        if final_arc_count > 1 {
+            error!("CRITICAL: LvmtStateManager will NOT be dropped! Still {} references!", final_arc_count - 1);
+        }
+    }
+}
+
 pub struct WrappedLvmtState(pub LvmtState);
+
+// impl Drop for State {
+//     fn drop(&mut self) {
+//         if self.dirty {
+//             panic!("State is dirty however is not committed before free.");
+//         }
+//     }
+// }
+// impl Drop for WrappedLvmtState {
+//     fn drop(&mut self) {
+//         todo!()
+//     }
+// }
 
 impl Deref for WrappedLvmtState {
     type Target = LvmtState;
@@ -46,9 +87,27 @@ pub struct LvmtStateManagerWithConf {
     pub persist_state_from_initialization:
         RwLock<Option<(Option<EpochId>, HashSet<EpochId>, u64, Option<u64>)>>,
 
-    // A dedicated lock for this specific maintenance operation.
-    // The `()` in `Mutex<()>` indicates this mutex is used for mutual exclusion only,
-    // not for protecting any data.
+    // ------------------------------------------------------------------
+    // Locking strategy (two-level lock):
+    // ------------------------------------------------------------------
+    // 1. shutdown_lock (RwLock<bool>):
+    //    - Read lock: Acquired during normal maintenance operations
+    //    - Write lock: Acquired during shutdown to block new operations
+    //    - Purpose: Coordinate shutdown with ongoing operations
+    //
+    // 2. maintenance_lock (Mutex<()>):
+    //    - Purpose: Serialize all concurrent maintenance operations
+    //    - Ensures only one thread modifies state at a time
+    //
+    // Lock ordering (to prevent deadlock):
+    //    Always acquire shutdown_lock BEFORE maintenance_lock
+    //
+    // Shutdown safety:
+    //    - New operations check shutdown_lock first (try_read)
+    //    - Shutdown acquires write lock, blocking until all operations complete
+    //    - After shutdown, try_read() succeeds but returns early (shutdown == true)
+    // ------------------------------------------------------------------
+    shutdown_lock: RwLock<bool>,
     maintenance_lock: Mutex<()>,
 }
 
@@ -63,10 +122,31 @@ impl LvmtStateManagerWithConf {
             storage_conf,
             intermediate_trie_root_merkle: RwLock::new(None),
             persist_state_from_initialization: RwLock::new(None),
+            shutdown_lock: RwLock::new(false),
             maintenance_lock: Mutex::new(()),
         })
     }
 }
+
+// impl Drop for LvmtStateManagerWithConf {
+//     fn drop(&mut self) {
+//         info!("LvmtStateManagerWithConf: starting graceful shutdown");
+        
+//         // ------------------------------------------------------------------
+//         // Acquire write lock on shutdown_lock
+//         // ------------------------------------------------------------------
+//         // This will block until all ongoing maintenance operations (holding read locks)
+//         // complete. Once acquired, no new maintenance operations can start.
+//         let mut shutdown_guard = self.shutdown_lock.write();
+//         *shutdown_guard = true;
+        
+//         info!("LvmtStateManagerWithConf: all maintenance operations completed");
+
+//         // Important: The lvmt_manager (Arc<LvmtStateManager>) will be dropped here,
+//         // but only after all maintenance operations have completed.
+//         // The shutdown_guard ensures no new operations can start.
+//     }
+// }
 
 // Methods for LvmtStateManagerWithConf as a peer of StorageManager
 impl LvmtStateManagerWithConf {
@@ -94,9 +174,17 @@ impl LvmtStateManagerWithConf {
         confirmed_height: u64,
         state_availability_boundary: &RwLock<StateAvailabilityBoundary>,
     ) -> Result<()> {
+        let shutdown_guard = match self.shutdown_lock.try_read() {
+            Some(guard) => guard,
+            None => return Ok(()),
+        };
+
+        if *shutdown_guard {
+            return Ok(());
+        }
+
         // ------------------------------------------------------------------
-        // Acquire the lock at the function's entry point. This serializes all
-        // concurrent calls to this function.
+        // This serializes all concurrent calls to this function.
         // ------------------------------------------------------------------
         // Once a thread acquires the lock, any other threads attempting to call this
         // function will block here. The `_` in `_guard` signifies that the
@@ -107,6 +195,8 @@ impl LvmtStateManagerWithConf {
         // other code can lock `state_availability_boundary` or `lvmt_manager` first
         // and then attempt to acquire `maintenance_lock`, thus preventing a circular wait.
         let _guard = self.maintenance_lock.lock();
+
+        // Both locks held; safe to proceed
 
         // compute `maintained_state_height_lower_bound`
         let additional_state_height_gap =
