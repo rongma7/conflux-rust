@@ -200,7 +200,7 @@ impl LvmtState {
 
     fn compute_state_root_inner(&mut self) -> Result<MerkleHash> {
         if let Some(ref state_root) = self.cached_state_root {
-            return Ok(*state_root); // todo: compute again?
+            return Ok(*state_root);
         }
 
         let mut x = Keccak::v256();
@@ -305,22 +305,8 @@ impl StorageStateTrait for LvmtState {
     fn commit(
         &mut self, epoch: EpochId,
     ) -> Result<StateRootWithAuxInfo> {
-        // This function is the only function that add a commit.
-        // The function uses &mut, so it will cannot be invoked concurrently.
-        // So the self.backend.lock() has no need to work entirely.
-
-        // Case 1: handle already existing epoch
-        {
-            let mut guard = self.backend.lock();
-            let manager = guard.as_manager()?;
-            if manager.query_commit_existence(&epoch)? {
-                let maybe_state_root = manager.get_state_root(epoch)?;
-                let state_root = maybe_state_root.expect("State root should be existing for existing commit in Lvmt");
-                return Ok(StateRootWithAuxInfo::genesis(&state_root))
-            }
-        }
-
-        // Case 2: handle new epoch
+        // Although this should ideally only be done when the check shows non-existence, 
+        // doing it that way doesn't pass compilation.
         let state_root = self.compute_state_root_inner()?;
         let changes_inner = self
             .changes
@@ -328,9 +314,19 @@ impl StorageStateTrait for LvmtState {
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
 
-        // commit data (to pending part)
+        // Hold lock for entire check-and-commit operation
         let mut guard = self.backend.lock();
         let mut manager = guard.as_manager()?;
+        
+        // Check existence while holding lock
+        if manager.query_commit_existence(&epoch)? {
+            let maybe_state_root = manager.get_state_root(epoch)?;
+            let state_root = maybe_state_root.expect("State root should be existing for existing commit in Lvmt");
+            return Ok(StateRootWithAuxInfo::genesis(&state_root))
+        }
+
+        // Commit while still holding lock
+        // commit data (to pending part)
         manager.commit(
             self.base_state.as_ref().map(|state| state.epoch_id),
             epoch,
