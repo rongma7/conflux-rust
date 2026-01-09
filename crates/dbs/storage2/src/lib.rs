@@ -51,13 +51,6 @@ pub struct LvmtView {
     pub epoch_id: H256,
 }
 
-impl Drop for LvmtState {
-    fn drop(&mut self) {
-        let storage_arc_count = Arc::strong_count(&self.backend);
-        info!(">>> LvmtState::drop: Arc<Mutex<LvmtStorage>> refcount: {}", storage_arc_count);
-    }
-}
-
 pub struct LvmtState {
     pub backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
     /// `None` for writable LvmtState to create genesis.
@@ -74,6 +67,19 @@ pub struct LvmtState {
     cached_state_root: Option<MerkleHash>,
 }
 
+impl Drop for LvmtState {
+    fn drop(&mut self) {
+        // if self.dirty {
+        //     panic!("State is dirty however is not committed before free.");
+        // }
+        let storage_arc_count = Arc::strong_count(&self.backend);
+        info!(">>> LvmtState::drop: Arc<Mutex<LvmtStorage>> refcount: {}", storage_arc_count);
+    }
+}
+pub struct LvmtStateManager {
+    backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
+}
+
 impl Drop for LvmtStateManager {
     fn drop(&mut self) {
         let storage_arc_count = Arc::strong_count(&self.backend);
@@ -86,10 +92,6 @@ impl Drop for LvmtStateManager {
         
         info!("=== LvmtStateManager::drop END ===");
     }
-}
-
-pub struct LvmtStateManager {
-    backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
 }
 
 impl MallocSizeOf for LvmtStateManager {

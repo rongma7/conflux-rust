@@ -2,34 +2,6 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-impl Drop for LvmtStateManagerWithConf {
-    fn drop(&mut self) {
-        let arc_count = Arc::strong_count(&self.lvmt_manager);
-        info!("=== LvmtStateManagerWithConf::drop START ===");
-        info!("Arc<LvmtStateManager> refcount: {}", arc_count);
-        
-        // 如果 arc_count > 1，说明还有其他地方持有引用
-        if arc_count > 1 {
-            error!("WARNING: LvmtStateManager is still referenced by {} other owners!", arc_count - 1);
-        }
-        
-        info!("Attempting to acquire write lock on shutdown_lock...");
-        let mut shutdown_guard = self.shutdown_lock.write();
-        info!("Write lock acquired!");
-        
-        *shutdown_guard = true;
-        
-        let final_arc_count = Arc::strong_count(&self.lvmt_manager);
-        info!("=== LvmtStateManagerWithConf::drop END ===");
-        info!("Arc<LvmtStateManager> final refcount: {}", final_arc_count);
-        
-        // 如果 final_arc_count > 1，LvmtStateManager 不会被 drop！
-        if final_arc_count > 1 {
-            error!("CRITICAL: LvmtStateManager will NOT be dropped! Still {} references!", final_arc_count - 1);
-        }
-    }
-}
-
 pub struct WrappedLvmtState(pub LvmtState);
 
 // impl Drop for State {
@@ -111,6 +83,32 @@ pub struct LvmtStateManagerWithConf {
     maintenance_lock: Mutex<()>,
 }
 
+impl Drop for LvmtStateManagerWithConf {
+    fn drop(&mut self) {
+        let arc_count = Arc::strong_count(&self.lvmt_manager);
+        info!("=== LvmtStateManagerWithConf::drop START ===");
+        info!("Arc<LvmtStateManager> refcount: {}", arc_count);
+        
+        if arc_count > 1 {
+            error!("WARNING: LvmtStateManager is still referenced by {} other owners!", arc_count - 1);
+        }
+        
+        info!("Attempting to acquire write lock on shutdown_lock...");
+        let mut shutdown_guard = self.shutdown_lock.write();
+        info!("Write lock acquired!");
+        
+        *shutdown_guard = true;
+        
+        let final_arc_count = Arc::strong_count(&self.lvmt_manager);
+        info!("=== LvmtStateManagerWithConf::drop END ===");
+        info!("Arc<LvmtStateManager> final refcount: {}", final_arc_count);
+        
+        if final_arc_count > 1 {
+            error!("CRITICAL: LvmtStateManager will NOT be dropped! Still {} references!", final_arc_count - 1);
+        }
+    }
+}
+
 impl LvmtStateManagerWithConf {
     pub fn new_arc(storage_conf: StorageConfiguration) -> Arc<Self> {
         let lvmt_manager = LvmtStateManager::new_arc(
@@ -127,26 +125,6 @@ impl LvmtStateManagerWithConf {
         })
     }
 }
-
-// impl Drop for LvmtStateManagerWithConf {
-//     fn drop(&mut self) {
-//         info!("LvmtStateManagerWithConf: starting graceful shutdown");
-        
-//         // ------------------------------------------------------------------
-//         // Acquire write lock on shutdown_lock
-//         // ------------------------------------------------------------------
-//         // This will block until all ongoing maintenance operations (holding read locks)
-//         // complete. Once acquired, no new maintenance operations can start.
-//         let mut shutdown_guard = self.shutdown_lock.write();
-//         *shutdown_guard = true;
-        
-//         info!("LvmtStateManagerWithConf: all maintenance operations completed");
-
-//         // Important: The lvmt_manager (Arc<LvmtStateManager>) will be dropped here,
-//         // but only after all maintenance operations have completed.
-//         // The shutdown_guard ensures no new operations can start.
-//     }
-// }
 
 // Methods for LvmtStateManagerWithConf as a peer of StorageManager
 impl LvmtStateManagerWithConf {
