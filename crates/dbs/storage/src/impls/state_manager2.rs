@@ -8,7 +8,6 @@ impl Drop for LvmtStateManagerWithConf {
         info!("=== LvmtStateManagerWithConf::drop START ===");
         info!("Arc<LvmtStateManager> refcount: {}", arc_count);
         
-        // 如果 arc_count > 1，说明还有其他地方持有引用
         if arc_count > 1 {
             error!("WARNING: LvmtStateManager is still referenced by {} other owners!", arc_count - 1);
         }
@@ -23,7 +22,6 @@ impl Drop for LvmtStateManagerWithConf {
         info!("=== LvmtStateManagerWithConf::drop END ===");
         info!("Arc<LvmtStateManager> final refcount: {}", final_arc_count);
         
-        // 如果 final_arc_count > 1，LvmtStateManager 不会被 drop！
         if final_arc_count > 1 {
             error!("CRITICAL: LvmtStateManager will NOT be dropped! Still {} references!", final_arc_count - 1);
         }

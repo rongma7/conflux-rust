@@ -274,7 +274,6 @@ class TestNode:
                 self.log.info("Stopping node: kill")
                 self.process.kill()
             else:
-                # 在 terminate 之前检查 stderr
                 self.stderr.seek(0)
                 stderr_before = self.stderr.read().decode('utf-8').strip()
                 self.log.info(f"[BEFORE TERMINATE] stderr content: '{stderr_before}'")
@@ -283,16 +282,14 @@ class TestNode:
                 self.log.info("Stopping node: terminate")
                 self.process.terminate()
                 
-                # 在 terminate 之后立即检查 stderr
                 self.stderr.seek(0)
                 stderr_after_immediate = self.stderr.read().decode('utf-8').strip()
                 self.log.info(f"[AFTER TERMINATE - IMMEDIATE] stderr content: '{stderr_after_immediate}'")
                 self.log.info(f"[AFTER TERMINATE - IMMEDIATE] stderr length: {len(stderr_after_immediate)}")
                 
-                # 如果有 wait，在 wait 之后再检查一次
                 if wait:
                     import time
-                    time.sleep(0.1)  # 给进程一点时间写入
+                    time.sleep(0.1)
                     self.stderr.seek(0)
                     stderr_after_delay = self.stderr.read().decode('utf-8').strip()
                     self.log.info(f"[AFTER TERMINATE - DELAYED] stderr content: '{stderr_after_delay}'")
