@@ -133,6 +133,7 @@ impl LvmtState {
     ) -> Result<()> {
         if let Some(map) = self.changes.as_mut() {
             map.insert(key, value);
+            self.cached_state_root = None;  // Invalidate cache
             Ok(())
         } else {
             Err(Error::Msg(
