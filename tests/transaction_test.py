@@ -9,8 +9,21 @@ from test_framework.blocktools import create_block, create_transaction, wait_for
 from test_framework.test_framework import DefaultConfluxTestFramework
 from test_framework.mininode import *
 from test_framework.util import *
+import resource
+import glob
+import subprocess
 
 class TransactionTest(DefaultConfluxTestFramework):
+    def setup_test_framework(self):
+        # 启用 core dump
+        try:
+            resource.setrlimit(resource.RLIMIT_CORE, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+            self.log.info("✅ Core dump enabled")
+        except Exception as e:
+            self.log.warning(f"Failed to enable core dump: {e}")
+        
+        super().setup_test_framework()
+    
     def run_test(self):
         genesis_key = default_config["GENESIS_PRI_KEY"]
         balance_map = {genesis_key: default_config["TOTAL_COIN"]}

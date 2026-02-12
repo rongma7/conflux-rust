@@ -265,52 +265,81 @@ class TestNode:
             return
         self.log.debug("Stopping node")
 
-        self.log.info(f"stderr type: {type(self.stderr)}")
-        self.log.info(f"stderr name: {getattr(self.stderr, 'name', 'no name')}")
-        self.log.info(f"stderr fileno: {self.stderr.fileno() if hasattr(self.stderr, 'fileno') else 'N/A'}")
-
+        # 记录进程 PID，用于后续分析
+        process_pid = self.process.pid
+        
         try:
             if kill:
                 self.log.info("Stopping node: kill")
                 self.process.kill()
             else:
-                # 在 terminate 之前检查 stderr
-                self.stderr.seek(0)
-                stderr_before = self.stderr.read().decode('utf-8').strip()
-                self.log.info(f"[BEFORE TERMINATE] stderr content: '{stderr_before}'")
-                self.log.info(f"[BEFORE TERMINATE] stderr length: {len(stderr_before)}")
-                
-                self.log.info("Stopping node: terminate")
+                self.log.info(f"🔍 Stopping node PID={process_pid}: terminate")
                 self.process.terminate()
                 
-                # 在 terminate 之后立即检查 stderr
-                self.stderr.seek(0)
-                stderr_after_immediate = self.stderr.read().decode('utf-8').strip()
-                self.log.info(f"[AFTER TERMINATE - IMMEDIATE] stderr content: '{stderr_after_immediate}'")
-                self.log.info(f"[AFTER TERMINATE - IMMEDIATE] stderr length: {len(stderr_after_immediate)}")
-                
-                # 如果有 wait，在 wait 之后再检查一次
+                # 给进程一点时间优雅退出
                 if wait:
                     import time
-                    time.sleep(0.1)  # 给进程一点时间写入
-                    self.stderr.seek(0)
-                    stderr_after_delay = self.stderr.read().decode('utf-8').strip()
-                    self.log.info(f"[AFTER TERMINATE - DELAYED] stderr content: '{stderr_after_delay}'")
-                    self.log.info(f"[AFTER TERMINATE - DELAYED] stderr length: {len(stderr_after_delay)}")    
+                    time.sleep(0.2)
         except http.client.CannotSendRequest:
             self.log.exception("Unable to stop node.")
 
         if wait:
             self.wait_until_stopped()
-        # Check that stderr is as expected
+        
+        # 🔥 详细记录退出状态
+        if self.return_code is not None:
+            if self.return_code == -6 or self.return_code == 134:
+                self.log.error(f"🔴 SIGABRT! Process PID={process_pid} code={self.return_code}")
+            elif self.return_code < 0:
+                import signal
+                sig = -self.return_code
+                sig_name = signal.Signals(sig).name if sig in [s.value for s in signal.Signals] else f"UNKNOWN({sig})"
+                self.log.error(f"🔴 Process killed by signal: {sig_name} (code={self.return_code})")
+            elif self.return_code > 0:
+                self.log.warning(f"⚠️ Process exited with non-zero code: {self.return_code}")
+        
+        # Check stderr
         self.stderr.seek(0)
         stderr = self.stderr.read().decode('utf-8').strip()
+        
+        # 🔥 详细记录 stderr 内容
+        if stderr:
+            self.log.info(f"📝 stderr output: '{stderr}'")
+            
+            # 检查是否是 terminate called
+            if "terminate called" in stderr:
+                self.log.error("🔴 C++ std::terminate() was called!")
+                self.log.error("    This typically means:")
+                self.log.error("    1. Exception in destructor")
+                self.log.error("    2. Exception in noexcept function")
+                self.log.error("    3. Unhandled exception in thread")
+                
+                # 尝试查找 core dump
+                import glob
+                import os
+                core_files = glob.glob('/tmp/core*') + glob.glob('./core*')
+                if core_files:
+                    latest_core = max(core_files, key=os.path.getctime)
+                    self.log.error(f"💾 Core dump may be at: {latest_core}")
+        
         # TODO: Check how to avoid `pthread lock: Invalid argument`.
         if stderr != expected_stderr and stderr != "pthread lock: Invalid argument" and "pthread_mutex_lock" not in stderr:
             if self.return_code is None:
                 self.log.info("Process is still running")
             else:
                 self.log.info("Process has terminated with code {}".format(self.return_code))
+            
+            # 🔥 在抛出异常前，记录完整上下文
+            self.log.error("="*60)
+            self.log.error("ASSERTION FAILURE CONTEXT:")
+            self.log.error(f"  PID: {process_pid}")
+            self.log.error(f"  Return code: {self.return_code}")
+            self.log.error(f"  Expected stderr: '{expected_stderr}'")
+            self.log.error(f"  Actual stderr: '{stderr}'")
+            self.log.error(f"  Node index: {self.index}")
+            self.log.error(f"  IP:Port: {self.ip}:{self.port}")
+            self.log.error("="*60)
+            
             raise AssertionError("Unexpected stderr {} != {} from {}:{} index={}".format(
                 stderr, expected_stderr, self.ip, self.port, self.index))
 
@@ -318,7 +347,7 @@ class TestNode:
         self.stderr.close()
 
         del self.p2ps[:]
-
+        
     def is_node_stopped(self):
         """Checks whether the node has stopped.
 
