@@ -264,18 +264,8 @@ impl LvmtStateManagerWithConf {
 
         info!("maintain_state_confirmed: finished");
 
-        // TODO: background_cleanup. Put the above codes in a code block first.
-        // let storage_clone_for_cleanup = self.clone();
-        // task::spawn(async move {
-        //     log!("[Cleanup Task] Started background cleanup.");
+        self.lvmt_manager.background_cleanup()?;
 
-        //     // storage_clone_for_cleanup.cleanup_old_files().await;
-
-        //     info!("[Cleanup Task] Background cleanup finished.");
-        // });
-
-        // info!("[Main Task] Function returning immediately, cleanup is running in background.");
-        
         Ok(())
     }
 

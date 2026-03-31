@@ -125,6 +125,11 @@ impl LvmtStateManager {
             pivot_commit_id,
         )?)
     }
+
+    pub fn background_cleanup(&self) -> Result<()> {
+        let guard = self.backend.lock();
+        Ok(guard.background_cleanup()?)
+    }
 }
 
 impl LvmtState {
