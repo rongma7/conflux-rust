@@ -489,6 +489,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "amt"
+version = "0.1.0"
+source = "git+https://github.com/Conflux-Chain/amt?rev=387995a#387995acb0e0f214e8dce7a937372020efee82e7"
+dependencies = [
+ "anyhow",
+ "ark-bls12-381",
+ "ark-bn254",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-poly",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "base64 0.22.1",
+ "error-chain",
+ "once_cell",
+ "rand 0.8.5",
+ "rayon",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -622,6 +644,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "num-integer",
  "num-traits",
+ "rayon",
  "zeroize",
 ]
 
@@ -680,6 +703,7 @@ dependencies = [
  "num-bigint 0.4.6",
  "num-traits",
  "paste",
+ "rayon",
  "zeroize",
 ]
 
@@ -764,6 +788,7 @@ dependencies = [
  "educe",
  "fnv",
  "hashbrown 0.15.5",
+ "rayon",
 ]
 
 [[package]]
@@ -827,6 +852,7 @@ dependencies = [
  "arrayvec 0.7.6",
  "digest 0.10.7",
  "num-bigint 0.4.6",
+ "rayon",
 ]
 
 [[package]]
@@ -868,6 +894,7 @@ checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
  "rand 0.8.5",
+ "rayon",
 ]
 
 [[package]]
@@ -1097,6 +1124,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.68.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1194,6 +1230,15 @@ dependencies = [
  "radium 0.7.0",
  "tap",
  "wyz",
+]
+
+[[package]]
+name = "blake2"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46502ad458c9a52b69d4d4d32775c788b7a1b85e8bc9d482d92250fc0e3f8efe"
+dependencies = [
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -1555,6 +1600,7 @@ dependencies = [
  "cfx-addr",
  "cfx-executor",
  "cfx-internal-common",
+ "cfx-kvdb-rocksdb",
  "cfx-parameters",
  "cfx-rpc-builder",
  "cfx-rpc-cfx-types",
@@ -1566,7 +1612,6 @@ dependencies = [
  "diem-types",
  "jsonrpc-http-server",
  "jsonrpsee",
- "kvdb-rocksdb",
  "lazy_static",
  "log",
  "metrics",
@@ -1604,6 +1649,7 @@ dependencies = [
 name = "cfx-db-errors"
 version = "2.0.2"
 dependencies = [
+ "cfx-storage2",
  "cfx-types",
  "primitives",
  "rlp 0.4.6",
@@ -1696,6 +1742,23 @@ dependencies = [
  "serde",
  "serde_derive",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "cfx-kvdb-rocksdb"
+version = "0.1.6"
+dependencies = [
+ "cfx-types",
+ "fs-swap",
+ "kvdb 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log",
+ "malloc_size_of",
+ "malloc_size_of_derive",
+ "num_cpus",
+ "parking_lot 0.12.5",
+ "regex",
+ "rocksdb",
+ "tempfile",
 ]
 
 [[package]]
@@ -2046,6 +2109,7 @@ dependencies = [
  "cfg-if 1.0.4",
  "cfx-db-errors",
  "cfx-internal-common",
+ "cfx-kvdb-rocksdb",
  "cfx-types",
  "cfx-util-macros",
  "delegate 0.5.2",
@@ -2055,8 +2119,7 @@ dependencies = [
  "futures 0.3.32",
  "hashbrown 0.7.2",
  "keccak-hash",
- "kvdb",
- "kvdb-rocksdb",
+ "kvdb 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static",
  "log",
  "log4rs",
@@ -2074,8 +2137,40 @@ dependencies = [
  "serde",
  "sqlite",
  "sqlite3-sys",
+ "storage2",
  "strfmt",
  "tokio",
+]
+
+[[package]]
+name = "cfx-storage2"
+version = "0.1.0"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=0d03eb4#0d03eb48827e24dcf2b64f8cdb0101b7cf22b910"
+dependencies = [
+ "amt",
+ "ark-bls12-381",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-poly",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0",
+ "auto_impl",
+ "bincode",
+ "blake2",
+ "ethereum-types 0.9.2",
+ "itertools 0.13.0",
+ "kvdb 0.13.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=06474591390e06580d2973f4dd45c19f98eab9d8)",
+ "kvdb-rocksdb",
+ "log",
+ "lru",
+ "nonempty",
+ "parking_lot 0.12.5",
+ "proptest",
+ "serde",
+ "slab",
+ "static_assertions",
+ "thiserror 1.0.69",
+ "tinyvec",
 ]
 
 [[package]]
@@ -2219,7 +2314,7 @@ dependencies = [
  "jsonrpc-core",
  "jsonrpsee",
  "keccak-hash",
- "kvdb",
+ "kvdb 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static",
  "link-cut-tree",
  "log",
@@ -3128,7 +3223,7 @@ dependencies = [
 name = "db"
 version = "0.1.0"
 dependencies = [
- "kvdb-rocksdb",
+ "cfx-kvdb-rocksdb",
  "log",
 ]
 
@@ -3843,6 +3938,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "error-chain"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d2f06b9cac1506ece98fe3231e3cc9c4410ec3d5b1f24ae1c8946f0742cdefc"
+dependencies = [
+ "version_check",
+]
+
+[[package]]
 name = "ethbloom"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4519,6 +4623,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
+ "equivalent",
  "foldhash 0.1.5",
 ]
 
@@ -5729,20 +5834,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "kvdb-rocksdb"
-version = "0.1.6"
+name = "kvdb"
+version = "0.13.0"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=06474591390e06580d2973f4dd45c19f98eab9d8#06474591390e06580d2973f4dd45c19f98eab9d8"
 dependencies = [
- "cfx-types",
- "fs-swap",
- "kvdb",
- "log",
- "malloc_size_of",
- "malloc_size_of_derive",
+ "smallvec 1.15.1",
+]
+
+[[package]]
+name = "kvdb-rocksdb"
+version = "0.17.0"
+source = "git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=06474591390e06580d2973f4dd45c19f98eab9d8#06474591390e06580d2973f4dd45c19f98eab9d8"
+dependencies = [
+ "kvdb 0.13.0 (git+https://github.com/Conflux-Chain/parity-common-rocksdb?rev=06474591390e06580d2973f4dd45c19f98eab9d8)",
  "num_cpus",
  "parking_lot 0.12.5",
  "regex",
  "rocksdb",
- "tempfile",
+ "smallvec 1.15.1",
 ]
 
 [[package]]
@@ -5919,7 +6028,7 @@ version = "0.1.0"
 dependencies = [
  "byteorder",
  "db",
- "kvdb",
+ "kvdb 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot 0.12.5",
  "rand 0.9.2",
  "rlp 0.4.6",
@@ -5973,6 +6082,15 @@ dependencies = [
  "scoped-tls",
  "tracing",
  "tracing-subscriber 0.3.23",
+]
+
+[[package]]
+name = "lru"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "234cf4f4a04dc1f57e24b96cc0cd600cf2af460d4161ac5ecdd0af8e1f3b2a38"
+dependencies = [
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -6379,6 +6497,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonempty"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9737e026353e5cd0736f98eddae28665118eb6f6600902a7f50db585621fecb6"
 
 [[package]]
 name = "nu-ansi-term"
@@ -9302,6 +9426,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "storage2"
+version = "1.0.0"
+dependencies = [
+ "amt",
+ "ark-bls12-381",
+ "cfx-db-errors",
+ "cfx-internal-common",
+ "cfx-storage2",
+ "cfx-types",
+ "ethereum-types 0.9.2",
+ "kvdb-rocksdb",
+ "log",
+ "malloc_size_of",
+ "malloc_size_of_derive",
+ "once_cell",
+ "parking_lot 0.12.5",
+ "primitives",
+ "tiny-keccak 2.0.2",
+]
+
+[[package]]
 name = "str_stack"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9754,6 +9899,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "tinyvec"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e61e67053d25a4e82c844e8424039d9745781b3fc4f32b8d55ed50f5f667ef3"
 
 [[package]]
 name = "tokio"

@@ -55,5 +55,5 @@ pub trait StateTrait: Sync + Send {
 }
 
 use super::{MptKeyValue, StateRootWithAuxInfo};
-use cfx_db_errors::storage::Result;
+use cfx_db_errors::storage::{Error, Result};
 use primitives::{EpochId, StorageKeyWithSpace};
