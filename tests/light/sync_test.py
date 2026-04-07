@@ -91,9 +91,6 @@ class LightSyncTest(ConfluxTestFramework):
         self.stop_node(LIGHTNODE, clean=False)
         self.start_node(LIGHTNODE, phase_to_wait=None)
 
-        # make sure witness sync completes
-        time.sleep(5)
-
         self.check_headers_synced()
         self.check_witnesses_synced()
 
@@ -110,7 +107,19 @@ class LightSyncTest(ConfluxTestFramework):
         filter = Filter(from_epoch="earliest", to_epoch=hex(latest_epoch - BLAME_CHECK_OFFSET), topics=[FOO_TOPIC])
 
         logs_full = self.rpc[FULLNODE0].get_logs(filter)
-        logs_light = self.rpc[LIGHTNODE].get_logs(filter)
+
+        # Witness sync on the light node is asynchronous and may not
+        # complete immediately after header sync. Retry a few times.
+        for attempt in range(20):
+            try:
+                logs_light = self.rpc[LIGHTNODE].get_logs(filter)
+                break
+            except Exception as e:
+                if "not available" in str(e) and attempt < 19:
+                    time.sleep(1)
+                else:
+                    raise
+
         assert_equal(logs_full, logs_light)
 
     def deploy_contract(self, sender, priv_key, data_hex):
