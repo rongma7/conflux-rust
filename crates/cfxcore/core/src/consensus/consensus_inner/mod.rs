@@ -4097,10 +4097,18 @@ impl ConsensusGraphInner {
     /// Cap the confirmed height for state maintenance at the PoS
     /// finalized height. Snapshots above the PoS finalized height
     /// must not be pruned.
+    ///
+    /// If PoS has not finalized any epoch beyond the era genesis
+    /// (i.e. no real PoS progress yet), skip the cap so that state
+    /// maintenance can still proceed based on tree-graph confirmation.
     pub fn confirmed_height_for_state_maintenance(
         &self, confirmed_height: u64,
     ) -> u64 {
-        std::cmp::min(confirmed_height, self.best_pos_pivot_decision.1)
+        if self.best_pos_pivot_decision.1 <= self.cur_era_genesis_height {
+            confirmed_height
+        } else {
+            std::cmp::min(confirmed_height, self.best_pos_pivot_decision.1)
+        }
     }
 }
 
