@@ -4097,10 +4097,26 @@ impl ConsensusGraphInner {
     /// Cap the confirmed height for state maintenance at the PoS
     /// finalized height. Snapshots above the PoS finalized height
     /// must not be pruned.
+    ///
+    /// When PoS is enabled at the current height but has not yet
+    /// finalized anything beyond the era genesis (e.g. LVMT processes
+    /// blocks faster than PoS can commit), skip the cap and fall back
+    /// to tree-graph confirmation. Otherwise (PoS not activated yet at
+    /// `confirmed_height`, i.e. `pos_reference_enable_height` is in the
+    /// future), keep the PoS cap so we do not prune state based on a
+    /// probabilistic PoW confirmation that could still be reverted.
     pub fn confirmed_height_for_state_maintenance(
         &self, confirmed_height: u64,
     ) -> u64 {
-        std::cmp::min(confirmed_height, self.best_pos_pivot_decision.1)
+        let pos_not_progressed =
+            self.best_pos_pivot_decision.1 <= self.cur_era_genesis_height;
+        let pos_is_active_at_height =
+            self.pos_verifier.is_enabled_at_height(confirmed_height);
+        if pos_not_progressed && pos_is_active_at_height {
+            confirmed_height
+        } else {
+            std::cmp::min(confirmed_height, self.best_pos_pivot_decision.1)
+        }
     }
 }
 
