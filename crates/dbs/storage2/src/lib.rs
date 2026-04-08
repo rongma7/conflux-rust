@@ -397,6 +397,12 @@ impl StorageManagerTrait for LvmtStateManager {
         self: &Arc<Self>, parent_epoch_id: StateIndex,
         _recover_mpt_during_construct_pivot_state: bool,
     ) -> Result<Option<Box<dyn StorageStateTrait>>> {
+        // Pre-checkout the key_value_store's CurrentMap to parent_epoch_id,
+        // so that subsequent get() calls hit the O(1) CurrentMap path
+        // instead of O(tree_depth) tree traversal.
+        self.backend.lock().as_manager()?
+            .checkout_current(parent_epoch_id.epoch_id)?;
+
         Ok(Some(Box::new(LvmtState {
             backend: self.backend.clone(),
             base_state: Some(LvmtView {
