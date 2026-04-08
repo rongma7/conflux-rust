@@ -210,12 +210,25 @@ impl LvmtState {
         }
 
         let mut x = Keccak::v256();
-        let iter_all = self.read_all_inner(Box::from([]), None)?.unwrap_or_default();
 
-        iter_all.iter().for_each(|(k, v)| {
-            x.update(&k);
-            x.update(&v);
-        });
+        // O(1): get parent epoch's state_root from LVMT backend
+        if let Some(view) = &self.base_state {
+            let parent_root = self.backend.lock().as_manager()?
+                .get_state_root(view.epoch_id)?
+                .unwrap_or_default();
+            x.update(parent_root.as_bytes());
+        }
+
+        // O(changes): only hash this epoch's modifications
+        if let Some(changes) = &self.changes {
+            for (key, value) in changes.iter() {
+                x.update(&key);
+                match value {
+                    Some(v) => { x.update(&[1]); x.update(&v); }
+                    None    => { x.update(&[0]); }
+                }
+            }
+        }
 
         let mut state_root = [0u8; 32];
         x.finalize(&mut state_root);
@@ -311,7 +324,7 @@ impl StorageStateTrait for LvmtState {
     fn commit(
         &mut self, epoch: EpochId,
     ) -> Result<StateRootWithAuxInfo> {
-        // Although this should ideally only be done when the check shows non-existence, 
+        // Although this should ideally only be done when the check shows non-existence,
         // doing it that way doesn't pass compilation.
         let state_root = self.compute_state_root_inner()?;
         let changes_inner = self
@@ -323,7 +336,7 @@ impl StorageStateTrait for LvmtState {
         // Hold lock for entire check-and-commit operation
         let mut guard = self.backend.lock();
         let mut manager = guard.as_manager()?;
-        
+
         // Check existence while holding lock
         if manager.query_commit_existence(&epoch)? {
             let maybe_state_root = manager.get_state_root(epoch)?;
