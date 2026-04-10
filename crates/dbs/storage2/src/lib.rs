@@ -46,7 +46,7 @@ pub static AMT: Lazy<AmtParams<PE>> = Lazy::new(|| {
     )
 });
 
-pub const DEFAULT_BATCH_COMMIT_SIZE: usize = 20;
+pub const DEFAULT_BATCH_COMMIT_SIZE: usize = 1;
 
 // ============================================================
 // BatchAccumulator: batches multiple epoch commits into one
@@ -605,41 +605,28 @@ impl StorageStateTrait for LvmtState {
             return Ok(StateRootWithAuxInfo::genesis(&state_root));
         }
 
-        // Check if already committed (idempotent)
-        if let Some(acc) = &self.batch_accumulator {
-            let acc_guard = acc.lock();
-            if acc_guard.contains(&epoch) {
-                return Ok(StateRootWithAuxInfo::genesis(
-                    &acc_guard.get_state_root(&epoch).unwrap(),
-                ));
-            }
-        }
-
-        // Also check cfx-storage2
+        // TEMPORARY: bypass accumulator, commit directly to cfx-storage2
         {
             let mut guard = self.backend.lock();
-            let manager = guard.as_manager()?;
+            let mut manager = guard.as_manager()?;
+
             if manager.query_commit_existence(&epoch)? {
                 let sr = manager.get_state_root(epoch)?
                     .expect("State root should exist for existing commit");
                 return Ok(StateRootWithAuxInfo::genesis(&sr));
             }
-        }
 
-        // Accumulate this epoch's delta
-        let acc = self.batch_accumulator.as_ref()
-            .expect("batch_accumulator must be set for writable state");
-        let batch_full = acc.lock().accumulate(
-            parent_epoch_id,
-            epoch,
-            state_root,
-            changes_inner,
-        );
+            manager.commit(
+                parent_epoch_id,
+                epoch,
+                state_root,
+                changes_inner.into_iter(),
+                &AMT,
+            )?;
 
-        // Flush if batch is full
-        if batch_full {
-            let mut backend_guard = self.backend.lock();
-            acc.lock().flush_batch(&mut backend_guard)?;
+            if let Some(acc) = &self.batch_accumulator {
+                acc.lock().last_flushed_epoch = Some(epoch);
+            }
         }
 
         Ok(StateRootWithAuxInfo::genesis(&state_root))
@@ -657,9 +644,14 @@ impl LvmtStateManager {
         // First check the batch accumulator (unflushed epochs)
         {
             let acc = self.batch_accumulator.lock();
-            if acc.contains(&epoch_id.epoch_id) {
+            let in_acc = acc.contains(&epoch_id.epoch_id);
+            info!("get_state_no_commit_inner: epoch={:?} in_accumulator={} last_flushed={:?}",
+                epoch_id.epoch_id, in_acc, acc.last_flushed_epoch);
+            if in_acc {
                 let overlay = acc.build_overlay_for_epoch(&epoch_id.epoch_id);
+                let overlay_size = overlay.as_ref().map(|o| o.len()).unwrap_or(0);
                 let state_root = acc.get_state_root(&epoch_id.epoch_id);
+                info!("  -> accumulator path: overlay_size={} base={:?}", overlay_size, acc.base_epoch_for_overlay());
                 let base_epoch = acc.base_epoch_for_overlay();
                 drop(acc);
 
@@ -714,6 +706,7 @@ impl LvmtStateManager {
 
         // Not in accumulator, check cfx-storage2
         let maybe_state_root = self.backend.lock().as_manager()?.get_state_root(epoch_id.epoch_id)?;
+        info!("get_state_no_commit_inner: epoch={:?} found_in_storage2={}", epoch_id.epoch_id, maybe_state_root.is_some());
 
         if let Some(state_root) = maybe_state_root {
             Ok(Some(LvmtState {
