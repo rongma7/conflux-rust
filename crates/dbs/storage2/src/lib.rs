@@ -241,6 +241,10 @@ pub struct LvmtState {
     /// Accumulated overlay from previous epochs in the same batch.
     /// Used for reads: checked between `changes` and `backend`.
     accumulated_overlay: Option<Arc<BTreeMap<Box<[u8]>, Option<Box<[u8]>>>>>,
+    /// The real parent epoch_id for the accumulator's parent chain.
+    /// When base_state is remapped to last_flushed_epoch for reads,
+    /// this preserves the original parent for correct chain walking.
+    real_parent_epoch_id: Option<H256>,
     /// Reference to the batch accumulator for commit-time operations.
     batch_accumulator: Option<Arc<Mutex<BatchAccumulator>>>,
 }
@@ -500,9 +504,15 @@ impl StorageStateTrait for LvmtState {
             .to_key_bytes()
             .into_boxed_slice();
 
+        // For debugging: detect staking-related keys
+        let is_staking_key = key.windows(21).any(|w| w == b"total_staking_tokens");
+
         // 1. get from changes (current epoch)
         if let Some(changes) = &self.changes {
             if let Some(value_in_changes) = changes.get(&key) {
+                if is_staking_key {
+                    info!("GET total_staking: from CHANGES, has_value={}", value_in_changes.is_some());
+                }
                 return Ok(value_in_changes.clone());
             }
         }
@@ -510,6 +520,9 @@ impl StorageStateTrait for LvmtState {
         // 2. get from accumulated_overlay (previous epochs in batch)
         if let Some(overlay) = &self.accumulated_overlay {
             if let Some(value_in_overlay) = overlay.get(&key) {
+                if is_staking_key {
+                    info!("GET total_staking: from OVERLAY, has_value={}", value_in_overlay.is_some());
+                }
                 return Ok(value_in_overlay.clone());
             }
         }
@@ -517,6 +530,9 @@ impl StorageStateTrait for LvmtState {
         // 3. get from backend (cfx-storage2)
         if let Some(view) = &self.base_state {
             let epoch_id = view.epoch_id;
+            if is_staking_key {
+                info!("GET total_staking: from BACKEND base={:?}, overlay_present={}", epoch_id, self.accumulated_overlay.is_some());
+            }
             Ok(self.backend.lock().as_manager()?.get(epoch_id, key)?
                 .map(|v| v.get_value())
                 .flatten())
@@ -591,7 +607,10 @@ impl StorageStateTrait for LvmtState {
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
 
-        let parent_epoch_id = self.base_state.as_ref().map(|s| s.epoch_id);
+        // Use real_parent_epoch_id if set (batch commit remaps base_state),
+        // otherwise fall back to base_state.
+        let parent_epoch_id = self.real_parent_epoch_id
+            .or_else(|| self.base_state.as_ref().map(|s| s.epoch_id));
 
         // Genesis commit (no parent) goes directly to cfx-storage2
         if parent_epoch_id.is_none() {
@@ -605,27 +624,47 @@ impl StorageStateTrait for LvmtState {
             return Ok(StateRootWithAuxInfo::genesis(&state_root));
         }
 
-        // TEMPORARY: bypass accumulator, commit directly to cfx-storage2
+        // Check if already committed (idempotent)
+        if let Some(acc) = &self.batch_accumulator {
+            let acc_guard = acc.lock();
+            if acc_guard.contains(&epoch) {
+                return Ok(StateRootWithAuxInfo::genesis(
+                    &acc_guard.get_state_root(&epoch).unwrap(),
+                ));
+            }
+        }
+
+        // Also check cfx-storage2
         {
             let mut guard = self.backend.lock();
-            let mut manager = guard.as_manager()?;
-
+            let manager = guard.as_manager()?;
             if manager.query_commit_existence(&epoch)? {
                 let sr = manager.get_state_root(epoch)?
                     .expect("State root should exist for existing commit");
                 return Ok(StateRootWithAuxInfo::genesis(&sr));
             }
+        }
 
-            manager.commit(
+        // Accumulate and flush atomically
+        let acc = self.batch_accumulator.as_ref()
+            .expect("batch_accumulator must be set for writable state");
+        {
+            let num_changes = changes_inner.len();
+            let mut acc_guard = acc.lock();
+            let batch_full = acc_guard.accumulate(
                 parent_epoch_id,
                 epoch,
                 state_root,
-                changes_inner.into_iter(),
-                &AMT,
-            )?;
+                changes_inner,
+            );
 
-            if let Some(acc) = &self.batch_accumulator {
-                acc.lock().last_flushed_epoch = Some(epoch);
+            if batch_full {
+                info!("commit: flushing batch, epoch={:?} changes={}", epoch, num_changes);
+                let mut backend_guard = self.backend.lock();
+                acc_guard.flush_batch(&mut backend_guard)?;
+            } else {
+                info!("commit: accumulated epoch={:?} changes={} batch_len={}",
+                    epoch, num_changes, acc_guard.epochs_in_order.len());
             }
         }
 
@@ -666,6 +705,7 @@ impl LvmtStateManager {
                     changes: None,
                     cached_state_root: state_root,
                     accumulated_overlay: overlay.map(Arc::new),
+                    real_parent_epoch_id: None,
                     batch_accumulator: None,
                 }));
             }
@@ -699,6 +739,7 @@ impl LvmtStateManager {
                     changes: None,
                     cached_state_root: Some(state_root),
                     accumulated_overlay: None,
+                    real_parent_epoch_id: None,
                     batch_accumulator: None,
                 }));
             }
@@ -716,6 +757,7 @@ impl LvmtStateManager {
                 }),
                 changes: None,
                 cached_state_root: Some(state_root),
+                real_parent_epoch_id: None,
                 accumulated_overlay: None,
                 batch_accumulator: None,
             }))
@@ -761,6 +803,8 @@ impl StorageManagerTrait for LvmtStateManager {
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
             accumulated_overlay: overlay.map(Arc::new),
+            // Preserve the real parent for accumulator's parent chain
+            real_parent_epoch_id: Some(parent_epoch_id.epoch_id),
             batch_accumulator: Some(self.batch_accumulator.clone()),
         })))
     }
@@ -774,6 +818,7 @@ impl StorageManagerTrait for LvmtStateManager {
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
             accumulated_overlay: None,
+            real_parent_epoch_id: None,
             batch_accumulator: Some(self.batch_accumulator.clone()),
         })
     }
