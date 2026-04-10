@@ -129,6 +129,7 @@ pub struct StorageConfiguration {
     pub use_isolated_db_for_mpt_table_height: Option<u64>,
     pub keep_era_genesis_snapshot: bool,
     pub backup_mpt_snapshot: bool,
+    pub batch_commit_size: u32,
 }
 
 impl StorageConfiguration {
@@ -178,6 +179,7 @@ impl StorageConfiguration {
             use_isolated_db_for_mpt_table_height: None,
             keep_era_genesis_snapshot: false,
             backup_mpt_snapshot: true,
+            batch_commit_size: storage2::DEFAULT_BATCH_COMMIT_SIZE as u32,
         }
     }
 

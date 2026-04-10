@@ -111,9 +111,10 @@ pub struct LvmtStateManagerWithConf {
 
 impl LvmtStateManagerWithConf {
     pub fn new_arc(storage_conf: StorageConfiguration) -> Arc<Self> {
-        let lvmt_manager = LvmtStateManager::new_arc(
+        let lvmt_manager = LvmtStateManager::new_arc_with_batch_size(
             storage_conf.path_storage_dir.join("lvmt_historical"),
             storage_conf.path_storage_dir.join("lvmt_pending"),
+            storage_conf.batch_commit_size as usize,
         );
         Arc::new(Self {
             lvmt_manager,
@@ -244,7 +245,6 @@ impl LvmtStateManagerWithConf {
             .is_newer_than_pending_root(first_available_state_height)?;
         if non_pivot_removed || adjust_pending_root {
             {
-                // TODO: Archive node may do something different.
                 let state_boundary = &mut *state_availability_boundary.write();
                 if first_available_state_height > state_boundary.lower_bound {
                     state_boundary
@@ -252,9 +252,11 @@ impl LvmtStateManagerWithConf {
                 }
             }
 
-            // change pending root to be the new
-            // `state_availability_boundary.lower_bound`
             if adjust_pending_root {
+                debug!(
+                    "maintain_state_confirmed: calling confirmed_pending_to_history height={} epoch={:?}",
+                    first_available_state_height, maintained_epoch_id,
+                );
                 self.lvmt_manager.confirmed_pending_to_history(
                     first_available_state_height,
                     maintained_epoch_id,
@@ -262,8 +264,7 @@ impl LvmtStateManagerWithConf {
             }
         }
 
-        info!("maintain_state_confirmed: finished");
-
+        debug!("maintain_state_confirmed: calling background_cleanup");
         self.lvmt_manager.background_cleanup()?;
 
         Ok(())
