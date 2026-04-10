@@ -431,6 +431,9 @@ build_config! {
 
         // This is designed for fast node catch-up but has not been thoroughly tested. Do not use it in production environments.
         (backup_mpt_snapshot, (bool), true)
+        // Number of epochs to batch into one cfx-storage2 commit.
+        // Higher values reduce pending tree depth but increase replay cost for RPC queries.
+        (batch_commit_size, (u32), 20)
     }
     {
         // Development related section.
@@ -868,6 +871,7 @@ impl Configuration {
                 .use_isolated_db_for_mpt_table_height,
             keep_era_genesis_snapshot: self.raw_conf.keep_era_genesis_snapshot,
             backup_mpt_snapshot: self.raw_conf.backup_mpt_snapshot,
+            batch_commit_size: self.raw_conf.batch_commit_size,
         }
     }
 
