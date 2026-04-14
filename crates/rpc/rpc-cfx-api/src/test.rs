@@ -157,4 +157,10 @@ pub trait TestRpc {
 
     #[method(name = "posGetChosenProposal")]
     fn pos_get_chosen_proposal(&self) -> RpcResult<Option<PosBlock>>;
+
+    #[method(name = "startCpuProfile")]
+    fn start_cpu_profile(&self, frequency: Option<u32>) -> RpcResult<String>;
+
+    #[method(name = "stopCpuProfile")]
+    fn stop_cpu_profile(&self, output_path: String) -> RpcResult<String>;
 }

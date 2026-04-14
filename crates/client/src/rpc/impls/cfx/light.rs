@@ -1297,6 +1297,8 @@ impl TestRpc for TestRpcImpl {
         fn get_pivot_chain_and_weight(&self, height_range: Option<(u64, u64)>) -> JsonRpcResult<Vec<(H256, U256)>>;
         fn send_usable_genesis_accounts(&self, account_start_index: usize) -> JsonRpcResult<Bytes>;
         fn set_db_crash(&self, crash_probability: f64, crash_exit_code: i32) -> JsonRpcResult<()>;
+        fn start_cpu_profile(&self, frequency: Option<u32>) -> JsonRpcResult<String>;
+        fn stop_cpu_profile(&self, output_path: String) -> JsonRpcResult<String>;
     }
 }
 

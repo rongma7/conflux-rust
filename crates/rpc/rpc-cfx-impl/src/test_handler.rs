@@ -54,6 +54,13 @@ use txgen::{DirectTransactionGenerator, TransactionGenerator};
 
 use crate::hash_value_to_h256;
 
+#[cfg(unix)]
+use pprof::ProfilerGuard;
+
+#[cfg(unix)]
+static CPU_PROFILER: std::sync::Mutex<Option<ProfilerGuard<'static>>> =
+    std::sync::Mutex::new(None);
+
 pub struct TestHandler {
     exit: Arc<(Mutex<bool>, Condvar)>,
     consensus: SharedConsensusGraph,
@@ -871,5 +878,104 @@ impl TestRpcServer for TestHandler {
                     })
             });
         Ok(maybe_block)
+    }
+
+    fn start_cpu_profile(&self, frequency: Option<u32>) -> RpcResult<String> {
+        #[cfg(unix)]
+        {
+            let freq = frequency.unwrap_or(99) as i32;
+            info!("RPC Request: startCpuProfile(frequency={})", freq);
+            let mut guard = CPU_PROFILER.lock().unwrap();
+            if guard.is_some() {
+                return Err(internal_error_with_data(
+                    "CPU profiler is already running",
+                ));
+            }
+            let profiler = ProfilerGuard::new(freq).map_err(|e| {
+                internal_error_with_data(format!(
+                    "Failed to start profiler: {}",
+                    e
+                ))
+            })?;
+            *guard = Some(profiler);
+            Ok("CPU profiling started".to_string())
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = frequency;
+            Err(internal_error_with_data(
+                "CPU profiling is only supported on unix",
+            ))
+        }
+    }
+
+    fn stop_cpu_profile(&self, output_path: String) -> RpcResult<String> {
+        #[cfg(unix)]
+        {
+            info!("RPC Request: stopCpuProfile(output={})", output_path);
+            let mut guard_slot = CPU_PROFILER.lock().unwrap();
+            let profiler = guard_slot.take().ok_or_else(|| {
+                internal_error_with_data("CPU profiler is not running")
+            })?;
+            let report = profiler.report().build().map_err(|e| {
+                internal_error_with_data(format!(
+                    "Failed to build report: {}",
+                    e
+                ))
+            })?;
+
+            // Write protobuf format
+            let pb_path = format!("{}.pb", output_path);
+            let mut file = std::fs::File::create(&pb_path).map_err(|e| {
+                internal_error_with_data(format!(
+                    "Failed to create file: {}",
+                    e
+                ))
+            })?;
+            use pprof::protos::Message;
+            report
+                .pprof()
+                .map_err(|e| {
+                    internal_error_with_data(format!(
+                        "Failed to convert to pprof: {}",
+                        e
+                    ))
+                })?
+                .write_to_writer(&mut file)
+                .map_err(|e| {
+                    internal_error_with_data(format!(
+                        "Failed to write profile: {}",
+                        e
+                    ))
+                })?;
+
+            // Also write flamegraph SVG
+            let svg_path = format!("{}.svg", output_path);
+            let mut svg_file =
+                std::fs::File::create(&svg_path).map_err(|e| {
+                    internal_error_with_data(format!(
+                        "Failed to create SVG file: {}",
+                        e
+                    ))
+                })?;
+            report.flamegraph(&mut svg_file).map_err(|e| {
+                internal_error_with_data(format!(
+                    "Failed to write flamegraph: {}",
+                    e
+                ))
+            })?;
+
+            Ok(format!(
+                "Profile saved to {} and {}",
+                pb_path, svg_path
+            ))
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = output_path;
+            Err(internal_error_with_data(
+                "CPU profiling is only supported on unix",
+            ))
+        }
     }
 }

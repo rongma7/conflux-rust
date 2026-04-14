@@ -2436,6 +2436,18 @@ impl TestRpc for TestRpcImpl {
             fn set_db_crash(&self, crash_probability: f64, crash_exit_code: i32) -> JsonRpcResult<()>;
         }
     }
+
+    fn start_cpu_profile(
+        &self, frequency: Option<u32>,
+    ) -> JsonRpcResult<String> {
+        cpu_profile::start(frequency)
+    }
+
+    fn stop_cpu_profile(
+        &self, output_path: String,
+    ) -> JsonRpcResult<String> {
+        cpu_profile::stop(output_path)
+    }
 }
 
 pub struct LocalRpcImpl {
@@ -2487,5 +2499,89 @@ impl LocalRpc for LocalRpcImpl {
             fn transactions_by_epoch(&self, epoch_number: U64) -> JsonRpcResult<Vec<WrapTransaction>>;
             fn transactions_by_block(&self, block_hash: H256) -> JsonRpcResult<Vec<WrapTransaction>>;
         }
+    }
+}
+
+#[cfg(unix)]
+mod cpu_profile {
+    use jsonrpc_core::Result as JsonRpcResult;
+    use pprof::ProfilerGuard;
+
+    static CPU_PROFILER: std::sync::Mutex<Option<ProfilerGuard<'static>>> =
+        std::sync::Mutex::new(None);
+
+    fn rpc_err(msg: impl Into<String>) -> jsonrpc_core::Error {
+        jsonrpc_core::Error {
+            code: jsonrpc_core::ErrorCode::InternalError,
+            message: msg.into(),
+            data: None,
+        }
+    }
+
+    pub fn start(frequency: Option<u32>) -> JsonRpcResult<String> {
+        let freq = frequency.unwrap_or(99) as i32;
+        log::info!("RPC Request: startCpuProfile(frequency={})", freq);
+        let mut guard = CPU_PROFILER.lock().unwrap();
+        if guard.is_some() {
+            return Err(rpc_err("CPU profiler is already running"));
+        }
+        let profiler = ProfilerGuard::new(freq)
+            .map_err(|e| rpc_err(format!("Failed to start profiler: {}", e)))?;
+        *guard = Some(profiler);
+        Ok("CPU profiling started".to_string())
+    }
+
+    pub fn stop(output_path: String) -> JsonRpcResult<String> {
+        log::info!("RPC Request: stopCpuProfile(output={})", output_path);
+        let mut guard_slot = CPU_PROFILER.lock().unwrap();
+        let profiler = guard_slot
+            .take()
+            .ok_or_else(|| rpc_err("CPU profiler is not running"))?;
+        let report = profiler
+            .report()
+            .build()
+            .map_err(|e| rpc_err(format!("Failed to build report: {}", e)))?;
+
+        // Write protobuf format
+        let pb_path = format!("{}.pb", output_path);
+        let mut file = std::fs::File::create(&pb_path)
+            .map_err(|e| rpc_err(format!("Failed to create file: {}", e)))?;
+        use pprof::protos::Message;
+        report
+            .pprof()
+            .map_err(|e| rpc_err(format!("Failed to convert to pprof: {}", e)))?
+            .write_to_writer(&mut file)
+            .map_err(|e| rpc_err(format!("Failed to write profile: {}", e)))?;
+
+        // Also write flamegraph SVG
+        let svg_path = format!("{}.svg", output_path);
+        let mut svg_file = std::fs::File::create(&svg_path)
+            .map_err(|e| rpc_err(format!("Failed to create SVG file: {}", e)))?;
+        report
+            .flamegraph(&mut svg_file)
+            .map_err(|e| rpc_err(format!("Failed to write flamegraph: {}", e)))?;
+
+        Ok(format!("Profile saved to {} and {}", pb_path, svg_path))
+    }
+}
+
+#[cfg(not(unix))]
+mod cpu_profile {
+    use jsonrpc_core::Result as JsonRpcResult;
+
+    pub fn start(_frequency: Option<u32>) -> JsonRpcResult<String> {
+        Err(jsonrpc_core::Error {
+            code: jsonrpc_core::ErrorCode::InternalError,
+            message: "CPU profiling is only supported on unix".into(),
+            data: None,
+        })
+    }
+
+    pub fn stop(_output_path: String) -> JsonRpcResult<String> {
+        Err(jsonrpc_core::Error {
+            code: jsonrpc_core::ErrorCode::InternalError,
+            message: "CPU profiling is only supported on unix".into(),
+            data: None,
+        })
     }
 }
