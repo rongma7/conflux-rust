@@ -30,12 +30,12 @@ class BenchEmptyBlocks(ConfluxTestFramework):
         node = self.nodes[0]
 
         batch_size = 1000
-        num_batches = 15
+        num_batches = 102
         times = []
 
         # Profile capture: start profiling before batch, stop after batch
         profile_early_batch = 2   # profile during batch 3
-        profile_late_batch = 13   # profile during batch 14
+        profile_late_batch = 95   # profile during batch 96
 
         print(f"\n{'='*60}")
         print(f"Benchmarking generate_empty_blocks({batch_size}) x {num_batches}")
