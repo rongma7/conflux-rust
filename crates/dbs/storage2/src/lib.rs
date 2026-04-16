@@ -3,7 +3,7 @@ pub mod state_manager;
 pub use cfx_db_errors::storage as errors;
 pub use errors::{Error, Result};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
-use parking_lot::Mutex;
+use parking_lot::RwLock;
 
 use std::{collections::BTreeMap, ops::Bound, path::{Path, PathBuf}, sync::Arc};
 
@@ -36,7 +36,7 @@ pub type PE = ark_bls12_381::Bls12_381;
 pub const TEST_LEVEL: usize = 16;
 pub static AMT: Lazy<AmtParams<PE>> = Lazy::new(|| {
     let pp_path = Path::new(env!("WORKSPACE_ROOT")).join("pp");
-    
+
     AmtParams::from_dir_mont(
         pp_path,
         TEST_LEVEL,
@@ -54,12 +54,12 @@ pub struct LvmtView {
 impl Drop for LvmtState {
     fn drop(&mut self) {
         let storage_arc_count = Arc::strong_count(&self.backend);
-        info!(">>> LvmtState::drop: Arc<Mutex<LvmtStorage>> refcount: {}", storage_arc_count);
+        info!(">>> LvmtState::drop: Arc<RwLock<LvmtStorage>> refcount: {}", storage_arc_count);
     }
 }
 
 pub struct LvmtState {
-    pub backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
+    pub backend: Arc<RwLock<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
     /// `None` for writable LvmtState to create genesis.
     /// `Some()` for read-only LvmtState indicating this epoch_id, or for
     /// writable LvmtState indicating parent_epoch_id.
@@ -78,18 +78,18 @@ impl Drop for LvmtStateManager {
     fn drop(&mut self) {
         let storage_arc_count = Arc::strong_count(&self.backend);
         info!("=== LvmtStateManager::drop START ===");
-        info!("Arc<Mutex<LvmtStorage>> refcount: {}", storage_arc_count);
-        
+        info!("Arc<RwLock<LvmtStorage>> refcount: {}", storage_arc_count);
+
         if storage_arc_count > 1 {
             error!("WARNING: LvmtStorage is still referenced by {} other owners!", storage_arc_count - 1);
         }
-        
+
         info!("=== LvmtStateManager::drop END ===");
     }
 }
 
 pub struct LvmtStateManager {
-    backend: Arc<Mutex<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
+    backend: Arc<RwLock<LvmtStorage<WrappedRocksDb<HistoricalTableName>, WrappedRocksDb<PendingTableName>>>>,
 }
 
 impl MallocSizeOf for LvmtStateManager {
@@ -103,23 +103,21 @@ impl LvmtStateManager {
     pub fn new_arc(historical_db_path: PathBuf, pending_db_path: PathBuf) -> Arc<Self> {
         let lvmt_storage = LvmtStorage::new_from_paths(&historical_db_path, &pending_db_path)
             .expect("LvmtStorage initialization failed");
-        Arc::new(Self { backend: Arc::new(Mutex::new(lvmt_storage)) })
+        Arc::new(Self { backend: Arc::new(RwLock::new(lvmt_storage)) })
     }
+
+    // Write operations: use write() + as_manager()
 
     pub fn make_pivot(&self, commit_id: H256) -> Result<bool> {
-        let mut guard = self.backend.lock();
+        let mut guard = self.backend.write();
         let mut manager = guard.as_manager()?;
         Ok(manager.make_pivot(commit_id)?)
-    }
-
-    pub fn is_newer_than_pending_root(&self, height: u64) -> Result<bool> {
-        Ok(self.backend.lock().as_manager()?.is_newer_than_pending_root(height))
     }
 
     pub fn confirmed_pending_to_history(
         &self, new_root_height: u64, pivot_commit_id: H256,
     ) -> Result<()> {
-        let mut guard = self.backend.lock();
+        let mut guard = self.backend.write();
         Ok(guard.confirmed_pending_to_history_with_height(
             new_root_height,
             pivot_commit_id,
@@ -127,8 +125,14 @@ impl LvmtStateManager {
     }
 
     pub fn background_cleanup(&self) -> Result<()> {
-        let mut guard = self.backend.lock();
+        let mut guard = self.backend.write();
         Ok(guard.background_cleanup()?)
+    }
+
+    // Read operations: use read() + as_reader()
+
+    pub fn is_newer_than_pending_root(&self, height: u64) -> Result<bool> {
+        Ok(self.backend.read().as_reader()?.is_newer_than_pending_root(height))
     }
 }
 
@@ -160,11 +164,11 @@ impl LvmtState {
     fn read_all_inner(
         &self, lower_bound_incl: Box<[u8]>, upper_bound_excl: Option<Box<[u8]>>,
     ) -> Result<Option<Vec<MptKeyValue>>> {
-        // get from backend
+        // get from backend (read lock)
         let mut keys_values: BTreeMap<Box<[u8]>, Box<[u8]>> =
             if let Some(view) = &self.base_state {
                 let epoch_id = view.epoch_id;
-                self.backend.lock().as_manager()?.iter_range(epoch_id, lower_bound_incl.clone(), upper_bound_excl.clone())?
+                self.backend.read().as_reader()?.iter_range(epoch_id, lower_bound_incl.clone(), upper_bound_excl.clone())?
                     .into_iter()
                     .map(|(key, lvmt_value)| (key, lvmt_value.get_value()))
                     .filter(|(_, value)| value.is_some())
@@ -211,9 +215,9 @@ impl LvmtState {
 
         let mut x = Keccak::v256();
 
-        // O(1): get parent epoch's state_root from LVMT backend
+        // O(1): get parent epoch's state_root from LVMT backend (read lock)
         if let Some(view) = &self.base_state {
-            let parent_root = self.backend.lock().as_manager()?
+            let parent_root = self.backend.read().as_reader()?
                 .get_state_root(view.epoch_id)?
                 .unwrap_or_default();
             x.update(parent_root.as_bytes());
@@ -253,10 +257,10 @@ impl StorageStateTrait for LvmtState {
             }
         }
 
-        // not in changes, then get from backend
+        // not in changes, then get from backend (read lock)
         if let Some(view) = &self.base_state {
             let epoch_id = view.epoch_id;
-            Ok(self.backend.lock().as_manager()?.get(epoch_id, key)?
+            Ok(self.backend.read().as_reader()?.get(epoch_id, key)?
                 .map(|v| v.get_value())
                 .flatten())
         } else {
@@ -286,14 +290,14 @@ impl StorageStateTrait for LvmtState {
             need_backend.push((i, key));
         }
 
-        // Single lock for all backend reads.
+        // Single read lock for all backend reads.
         if !need_backend.is_empty() {
             if let Some(view) = &self.base_state {
                 let epoch_id = view.epoch_id;
-                let mut guard = self.backend.lock();
-                let manager = guard.as_manager()?;
+                let guard = self.backend.read();
+                let reader = guard.as_reader()?;
                 for (idx, key) in need_backend {
-                    let value = manager
+                    let value = reader
                         .get(epoch_id, key)?
                         .map(|v| v.get_value())
                         .flatten();
@@ -361,7 +365,7 @@ impl StorageStateTrait for LvmtState {
             .ok_or(Error::Msg("No state root".to_owned()).into())
     }
 
-    // commit() write LvmtStateManager
+    // commit() write LvmtStateManager (write lock)
     fn commit(
         &mut self, epoch: EpochId,
     ) -> Result<StateRootWithAuxInfo> {
@@ -374,8 +378,8 @@ impl StorageStateTrait for LvmtState {
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
 
-        // Hold lock for entire check-and-commit operation
-        let mut guard = self.backend.lock();
+        // Hold write lock for entire check-and-commit operation
+        let mut guard = self.backend.write();
         let mut manager = guard.as_manager()?;
 
         // Check existence while holding lock
@@ -394,8 +398,6 @@ impl StorageStateTrait for LvmtState {
             changes_inner.into_iter(),
             &AMT,
         )?;
-        // commit data (to historical part) // TODO: how to determine new_root
-        // self.manager.backend.storage.confirmed_pending_to_history(todo!());
 
         Ok(StateRootWithAuxInfo::genesis(&state_root))
     }
@@ -405,7 +407,8 @@ impl LvmtStateManager {
     pub fn get_state_no_commit_inner(
         self: &Arc<Self>, epoch_id: StateIndex
     ) -> Result<Option<LvmtState>> {
-        let maybe_state_root = self.backend.lock().as_manager()?.get_state_root(epoch_id.epoch_id)?;
+        // Read lock: only need to check state_root existence
+        let maybe_state_root = self.backend.read().as_reader()?.get_state_root(epoch_id.epoch_id)?;
 
         if maybe_state_root.is_none() {
             return Ok(None);
@@ -441,7 +444,8 @@ impl StorageManagerTrait for LvmtStateManager {
         // Pre-checkout the key_value_store's CurrentMap to parent_epoch_id,
         // so that subsequent get() calls hit the O(1) CurrentMap path
         // instead of O(tree_depth) tree traversal.
-        self.backend.lock().as_manager()?
+        // checkout_current is read-only in the new LvmtStoreReader API.
+        self.backend.read().as_reader()?
             .checkout_current(parent_epoch_id.epoch_id)?;
 
         Ok(Some(Box::new(LvmtState {
