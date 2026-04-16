@@ -2146,7 +2146,7 @@ dependencies = [
 [[package]]
 name = "cfx-storage2"
 version = "0.1.0"
-source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=23c561c#23c561ce5596b6ea55e04ce5d94c80c2dc820d24"
+source = "git+https://github.com/Conflux-Chain/cfx-storage2.git?rev=7aacc7f#7aacc7f2efb80703a4c84598e4db5fdede420c6c"
 dependencies = [
  "amt",
  "ark-bls12-381",
