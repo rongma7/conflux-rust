@@ -30,7 +30,10 @@ use std::{
     cmp::{max, min},
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     slice::Iter,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 pub struct ConsensusNewBlockHandler {
@@ -52,6 +55,10 @@ pub struct ConsensusNewBlockHandler {
     node_type: NodeType,
 
     pivot_hint: Option<Arc<PivotHint>>,
+
+    /// Track the last confirmed_height at which maintain_state_confirmed was
+    /// called, to batch calls and reduce Worker-thread lock contention.
+    last_maintained_height: AtomicU64,
 }
 
 /// ConsensusNewBlockHandler contains all sub-routines for handling new arriving
@@ -80,6 +87,7 @@ impl ConsensusNewBlockHandler {
             blame_verifier,
             node_type,
             pivot_hint,
+            last_maintained_height: AtomicU64::new(0),
         }
     }
 
@@ -1618,18 +1626,32 @@ impl ConsensusNewBlockHandler {
             }
             confirmed_height =
                 inner.confirmed_height_for_state_maintenance(confirmed_height);
-            self.data_man
-                .storage_manager
-                .get_storage_manager()
-                .maintain_state_confirmed(
-                    inner,
-                    inner.cur_era_stable_height,
-                    self.conf.inner_conf.era_epoch_count,
-                    confirmed_height,
-                    &self.data_man.state_availability_boundary,
-                )
-                // FIXME: propogate error.
-                .expect(&concat!(file!(), ":", line!(), ":", column!()));
+            // Batch maintain_state_confirmed calls to reduce Worker-thread
+            // lock contention on the Storage2 global Mutex. Instead of
+            // calling every block, only call when confirmed_height has
+            // advanced by at least MAINTAIN_STATE_BATCH_INTERVAL blocks.
+            const MAINTAIN_STATE_BATCH_INTERVAL: u64 = 100;
+            let last_maintained =
+                self.last_maintained_height.load(Ordering::Relaxed);
+            if confirmed_height
+                >= last_maintained + MAINTAIN_STATE_BATCH_INTERVAL
+                || confirmed_height == 0
+            {
+                self.data_man
+                    .storage_manager
+                    .get_storage_manager()
+                    .maintain_state_confirmed(
+                        inner,
+                        inner.cur_era_stable_height,
+                        self.conf.inner_conf.era_epoch_count,
+                        confirmed_height,
+                        &self.data_man.state_availability_boundary,
+                    )
+                    // FIXME: propogate error.
+                    .expect(&concat!(file!(), ":", line!(), ":", column!()));
+                self.last_maintained_height
+                    .store(confirmed_height, Ordering::Relaxed);
+            }
             self.set_block_tx_packed(inner, me);
             self.delayed_tx_recycle_in_skipped_blocks(inner, capped_fork_at);
 
