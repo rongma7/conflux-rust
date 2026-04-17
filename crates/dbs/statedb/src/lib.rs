@@ -104,6 +104,61 @@ mod impls {
             Ok(r)
         }
 
+        /// Batch read: keys not already cached are fetched from storage in
+        /// a single backend lock acquisition (on storage implementations that
+        /// support it).
+        pub fn get_raw_batch(
+            &self, keys: &[StorageKeyWithSpace],
+        ) -> Result<Vec<Option<Arc<[u8]>>>> {
+            let mut results: Vec<Option<Arc<[u8]>>> = vec![None; keys.len()];
+            let mut need_storage: Vec<(usize, StorageKeyWithSpace)> =
+                Vec::new();
+
+            // Resolve from cache first.
+            {
+                let guard = self.accessed_entries.read();
+                for (i, key) in keys.iter().enumerate() {
+                    let key_bytes = key.to_key_bytes();
+                    if let Some(v) = guard.get(&key_bytes) {
+                        results[i] = v.current_value.clone();
+                    } else {
+                        need_storage.push((i, *key));
+                    }
+                }
+            }
+
+            if need_storage.is_empty() {
+                return Ok(results);
+            }
+
+            // Batch fetch from storage (single lock for LvmtState).
+            let storage_keys: Vec<StorageKeyWithSpace> =
+                need_storage.iter().map(|(_, k)| *k).collect();
+            let fetched = self.storage.get_batch(&storage_keys)?;
+
+            // Populate results and cache.
+            let mut accessed = self.accessed_entries.write();
+            for ((i, key), value) in
+                need_storage.into_iter().zip(fetched.into_iter())
+            {
+                let key_bytes = key.to_key_bytes();
+                let arc_value: Option<Arc<[u8]>> =
+                    value.map(|v| Arc::from(v));
+                let entry = accessed.entry(key_bytes);
+                match entry {
+                    Occupied(o) => {
+                        // Another thread raced and inserted it.
+                        results[i] = o.get().current_value.clone();
+                    }
+                    Vacant(_) => {
+                        results[i] = arc_value.clone();
+                        entry.or_insert(EntryValue::new(arc_value));
+                    }
+                }
+            }
+            Ok(results)
+        }
+
         #[cfg(feature = "testonly_code")]
         pub fn get_raw_test(
             &self, key: StorageKeyWithSpace,

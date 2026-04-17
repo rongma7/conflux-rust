@@ -43,18 +43,50 @@ impl GlobalStat {
     }
 
     /// Get loaded global statistic variables from the database.
+    /// Uses a batched read to fetch all 14 params in a single storage lock.
     pub fn loaded(db: &StateDb) -> DbResult<Self> {
-        let mut ans = Default::default();
-        fn load_value<T: GlobalParamKey>(
-            ans: &mut [U256; TOTAL_GLOBAL_PARAMS], db: &StateDb,
-        ) -> DbResult<()> {
-            let loaded = db.get_global_param::<T>()?;
-            ans[T::ID] = T::into_vm_value(loaded);
-            Ok(())
-        }
         use global_params::*;
-        for_all_global_param_keys! {
-            load_value::<Key>(&mut ans, db)?;
+        use primitives::StorageKeyWithSpace;
+
+        // Collect all storage keys.
+        let mut keys: Vec<StorageKeyWithSpace<'static>> = Vec::new();
+        // Parallel arrays: ids[i] and into_vm_fns[i] correspond to keys[i].
+        let mut ids: Vec<usize> = Vec::new();
+        let mut into_vm_fns: Vec<fn(U256) -> U256> = Vec::new();
+
+        macro_rules! collect_key {
+            ($T:ty) => {{
+                keys.push(<$T>::STORAGE_KEY);
+                ids.push(<$T>::ID);
+                into_vm_fns.push(<$T>::into_vm_value);
+            }};
+        }
+
+        collect_key!(InterestRate);
+        collect_key!(AccumulateInterestRate);
+        collect_key!(TotalIssued);
+        collect_key!(TotalStaking);
+        collect_key!(TotalStorage);
+        collect_key!(TotalEvmToken);
+        collect_key!(UsedStoragePoints);
+        collect_key!(ConvertedStoragePoints);
+        collect_key!(TotalPosStaking);
+        collect_key!(DistributablePoSInterest);
+        collect_key!(LastDistributeBlock);
+        collect_key!(PowBaseReward);
+        collect_key!(TotalBurnt1559);
+        collect_key!(BaseFeeProp);
+
+        // Batch read – single backend lock acquisition for LvmtState.
+        let raw_values = db.get_raw_batch(&keys)?;
+
+        let mut ans = <[U256; TOTAL_GLOBAL_PARAMS]>::default();
+        for (i, raw) in raw_values.into_iter().enumerate() {
+            let loaded: U256 = match raw {
+                Some(bytes) => ::rlp::decode::<U256>(&bytes)?,
+                None => U256::zero(),
+            };
+            ans[ids[i]] = (into_vm_fns[i])(loaded);
         }
         Ok(GlobalStat(ans))
     }

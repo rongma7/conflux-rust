@@ -43,7 +43,17 @@ pub trait StateTrait: Sync + Send {
     ) -> Result<()> {
         Err(Error::Msg("Not implemented".into()))
     }
-    
+
+    /// Read multiple keys in a single backend lock acquisition.
+    /// Default: falls back to individual gets.
+    fn get_batch(
+        &self, keys: &[StorageKeyWithSpace],
+    ) -> Result<Vec<Option<Box<[u8]>>>> {
+        keys.iter()
+            .map(|k| self.get(k.clone()))
+            .collect()
+    }
+
     // Finalize
     /// It's costly to compute state root however it's only necessary to compute
     /// state root once before committing.

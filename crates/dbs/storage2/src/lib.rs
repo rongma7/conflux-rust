@@ -264,6 +264,47 @@ impl StorageStateTrait for LvmtState {
         }
     }
 
+    /// Batch read: fetch all keys in a single backend lock acquisition.
+    fn get_batch(
+        &self, keys: &[StorageKeyWithSpace],
+    ) -> Result<Vec<Option<Box<[u8]>>>> {
+        let mut results: Vec<Option<Box<[u8]>>> = Vec::with_capacity(keys.len());
+        // Indices that were not resolved from `changes` and need the backend.
+        let mut need_backend: Vec<(usize, Box<[u8]>)> = Vec::new();
+
+        for (i, access_key) in keys.iter().enumerate() {
+            let key = access_key.to_key_bytes().into_boxed_slice();
+
+            // Try local changes first (no lock).
+            if let Some(changes) = &self.changes {
+                if let Some(value_in_changes) = changes.get(&key) {
+                    results.push(value_in_changes.clone());
+                    continue;
+                }
+            }
+            results.push(None); // placeholder
+            need_backend.push((i, key));
+        }
+
+        // Single lock for all backend reads.
+        if !need_backend.is_empty() {
+            if let Some(view) = &self.base_state {
+                let epoch_id = view.epoch_id;
+                let mut guard = self.backend.lock();
+                let manager = guard.as_manager()?;
+                for (idx, key) in need_backend {
+                    let value = manager
+                        .get(epoch_id, key)?
+                        .map(|v| v.get_value())
+                        .flatten();
+                    results[idx] = value;
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     fn set(
         &mut self, access_key: StorageKeyWithSpace, value: Box<[u8]>,
     ) -> Result<()> {
