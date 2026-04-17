@@ -127,7 +127,7 @@ impl LvmtStateManager {
     }
 
     pub fn background_cleanup(&self) -> Result<()> {
-        let guard = self.backend.lock();
+        let mut guard = self.backend.lock();
         Ok(guard.background_cleanup()?)
     }
 }
