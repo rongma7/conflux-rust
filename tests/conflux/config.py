@@ -1,3 +1,5 @@
+import os
+
 from . import trie
 from eth_utils import decode_hex
 
@@ -65,3 +67,10 @@ small_local_test_conf = dict(
     enable_single_mpt_storage = "true",
     rpc_enable_metrics = "true",
 )
+
+# Phase 1 runtime selector between the original MPT (storage) backend and the
+# LVMT (storage2) backend. Default is MPT; set USE_LVMT_STORAGE=1 in the
+# environment before invoking the test suite to exercise the LVMT backend.
+if os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes"):
+    small_local_test_conf["use_lvmt_storage"] = "true"
+
