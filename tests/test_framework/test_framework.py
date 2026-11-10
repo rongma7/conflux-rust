@@ -370,8 +370,6 @@ class ConfluxTestFramework:
                 "Testcase failed. Attaching python debugger. Enter ? for help")
             pdb.set_trace()
         
-        self.log.debug(success)
-
         self.log.debug('Closing down network thread')
         self.network_thread.close()
 
