@@ -247,8 +247,8 @@ impl RangedManifest {
             snapshot_epoch_id, start_key
         );
 
-        let snapshot_db_manager =
-            storage_manager.get_storage_manager().get_snapshot_manager();
+        let storage_backend = storage_manager.get_storage_manager();
+        let snapshot_db_manager = storage_backend.get_snapshot_manager();
 
         let snapshot_db = match snapshot_db_manager.get_snapshot_by_epoch_id(
             snapshot_epoch_id,
@@ -370,8 +370,8 @@ impl Chunk {
             snapshot_epoch_id, chunk_key
         );
 
-        let snapshot_db_manager =
-            storage_manager.get_storage_manager().get_snapshot_manager();
+        let storage_backend = storage_manager.get_storage_manager();
+        let snapshot_db_manager = storage_backend.get_snapshot_manager();
 
         let snapshot_db = match snapshot_db_manager.get_snapshot_by_epoch_id(
             snapshot_epoch_id,

@@ -236,10 +236,6 @@ impl StateManager2 {
         &self.lvmt_manager
     }
 
-    pub fn get_storage_manager_arc(&self) -> &Arc<StorageManager> {
-        unimplemented!()
-    }
-
     pub fn notify_genesis_hash(&self, _genesis_hash: EpochId) { () }
 
     pub fn config(&self) -> &StorageConfiguration {
@@ -301,7 +297,4 @@ use std::{
 };
 use storage2::{LvmtState, LvmtStateManager};
 
-use super::{
-    state_manager::{SnapshotDb, SnapshotDbManager},
-    storage_manager::StorageManager,
-};
+use super::state_manager::{SnapshotDb, SnapshotDbManager};

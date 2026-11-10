@@ -129,6 +129,9 @@ pub struct StorageConfiguration {
     pub use_isolated_db_for_mpt_table_height: Option<u64>,
     pub keep_era_genesis_snapshot: bool,
     pub backup_mpt_snapshot: bool,
+    /// When true, the node uses the LVMT (storage2) backend instead of the
+    /// original MPT (storage) backend. Default: false.
+    pub use_lvmt_storage: bool,
 }
 
 impl StorageConfiguration {
@@ -178,6 +181,7 @@ impl StorageConfiguration {
             use_isolated_db_for_mpt_table_height: None,
             keep_era_genesis_snapshot: false,
             backup_mpt_snapshot: true,
+            use_lvmt_storage: false,
         }
     }
 
@@ -226,7 +230,7 @@ pub use self::{
     storage_db::{KeyValueDbIterableTrait, KeyValueDbTrait},
 };
 
-pub use impls::state_manager2::WrappedLvmtState as StorageState;
+pub use impls::state_manager_dispatch::{StorageBackendRef, StorageState};
 pub use storage2::{StateIndex, StorageManagerTrait, StorageStateTrait};
 
 #[cfg(any(test, feature = "testonly_code"))]

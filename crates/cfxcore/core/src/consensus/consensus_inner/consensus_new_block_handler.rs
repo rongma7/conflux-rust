@@ -2255,7 +2255,7 @@ impl ConsensusNewBlockHandler {
             .data_man
             .storage_manager
             .get_storage_manager()
-            .persist_state_from_initialization
+            .persist_state_from_initialization()
             .write()
             .take()
         {
@@ -2404,12 +2404,10 @@ impl ConsensusNewBlockHandler {
                     .expect("pivot hash should be exist")
             };
 
-            let snapshot_db_manager = inner
-                .data_man
-                .storage_manager
-                .get_storage_manager()
-                .get_snapshot_manager()
-                .get_snapshot_db_manager();
+            let storage_backend =
+                inner.data_man.storage_manager.get_storage_manager();
+            let snapshot_db_manager =
+                storage_backend.get_snapshot_manager().get_snapshot_db_manager();
 
             snapshot_db_manager.update_latest_snapshot_id(
                 era_pivot_hash.clone(),
@@ -2480,7 +2478,7 @@ impl ConsensusNewBlockHandler {
         let storage_manager =
             inner.data_man.storage_manager.get_storage_manager();
         if !storage_manager
-            .storage_conf
+            .storage_conf()
             .keep_snapshot_before_stable_checkpoint
             || need_set_intermediate_trie_root_merkle
         {
@@ -2510,7 +2508,7 @@ impl ConsensusNewBlockHandler {
             };
 
             debug!("previous pivot hash {:?} intermediate trie root merkle for next pivot {:?}", pivot_hash, intermediate_trie_root_merkle);
-            *storage_manager.intermediate_trie_root_merkle.write() =
+            *storage_manager.intermediate_trie_root_merkle().write() =
                 Some(intermediate_trie_root_merkle);
         }
     }

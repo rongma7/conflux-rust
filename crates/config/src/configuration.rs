@@ -337,6 +337,7 @@ build_config! {
         // The conflux data dir, if unspecified, is the workdir where conflux is started.
         (conflux_data_dir, (String), "./blockchain_data".to_string())
         (enable_single_mpt_storage, (bool), false)
+        (use_lvmt_storage, (bool), false)
         (ledger_cache_size, (usize), DEFAULT_LEDGER_CACHE_SIZE)
         (invalid_block_hash_cache_size_in_count, (usize), DEFAULT_INVALID_BLOCK_HASH_CACHE_SIZE_IN_COUNT)
         (rocksdb_cache_size, (Option<usize>), Some(128))
@@ -868,6 +869,7 @@ impl Configuration {
                 .use_isolated_db_for_mpt_table_height,
             keep_era_genesis_snapshot: self.raw_conf.keep_era_genesis_snapshot,
             backup_mpt_snapshot: self.raw_conf.backup_mpt_snapshot,
+            use_lvmt_storage: self.raw_conf.use_lvmt_storage,
         }
     }
 
