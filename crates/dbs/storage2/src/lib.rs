@@ -29,7 +29,6 @@ use once_cell::sync::Lazy;
 use primitives::{
     EpochId, MerkleHash, StorageKeyWithSpace,
 };
-use tiny_keccak::{Hasher, Keccak};
 
 pub type PE = ark_bls12_381::Bls12_381;
 pub const TEST_LEVEL: usize = 16;
@@ -191,32 +190,21 @@ impl LvmtState {
             return Ok(*state_root);
         }
 
-        let mut x = Keccak::v256();
+        let base = self.base_state.as_ref().map(|view| view.epoch_id);
+        let changes_iter = self
+            .changes
+            .as_ref()
+            .into_iter()
+            .flat_map(|map| map.iter())
+            .map(|(k, v)| (k.clone(), v.clone()));
 
-        // O(1): get parent epoch's state_root from LVMT backend (read lock)
-        if let Some(view) = &self.base_state {
-            let parent_root = self.backend.read().as_reader()?
-                .get_state_root(view.epoch_id)?
-                .unwrap_or_default();
-            x.update(parent_root.as_bytes());
-        }
+        let state_root = self
+            .backend
+            .read()
+            .commit_dry_run(base, changes_iter, &AMT)?;
 
-        // O(changes): only hash this epoch's modifications
-        if let Some(changes) = &self.changes {
-            for (key, value) in changes.iter() {
-                x.update(&key);
-                match value {
-                    Some(v) => { x.update(&[1]); x.update(&v); }
-                    None    => { x.update(&[0]); }
-                }
-            }
-        }
-
-        let mut state_root = [0u8; 32];
-        x.finalize(&mut state_root);
-
-        self.cached_state_root = Some(H256(state_root));
-        Ok(H256(state_root))
+        self.cached_state_root = Some(state_root);
+        Ok(state_root)
     }
 }
 
@@ -347,9 +335,6 @@ impl StorageStateTrait for LvmtState {
     fn commit(
         &mut self, epoch: EpochId,
     ) -> Result<StateRootWithAuxInfo> {
-        // Although this should ideally only be done when the check shows non-existence,
-        // doing it that way doesn't pass compilation.
-        let state_root = self.compute_state_root_inner()?;
         let changes_inner = self
             .changes
             .as_mut()
@@ -367,16 +352,18 @@ impl StorageStateTrait for LvmtState {
             return Ok(StateRootWithAuxInfo::genesis(&state_root))
         }
 
-        // Commit while still holding lock
-        // commit data (to pending part)
-        manager.commit(
+        // The new LvmtStore::commit computes the state root internally and
+        // returns it; dry-run and real commit share the same computation,
+        // so this agrees with any value previously handed out by
+        // compute_state_root for the same `changes` on this base.
+        let state_root = manager.commit(
             self.base_state.as_ref().map(|state| state.epoch_id),
             epoch,
-            state_root,
             changes_inner.into_iter(),
             &AMT,
         )?;
 
+        self.cached_state_root = Some(state_root);
         Ok(StateRootWithAuxInfo::genesis(&state_root))
     }
 }
