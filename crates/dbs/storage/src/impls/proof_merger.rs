@@ -36,11 +36,18 @@ pub struct StateProofMerger {
 
 impl StateProofMerger {
     pub fn merge(&mut self, proof: StateProof) {
-        let StateProof {
+        let MptStateProof {
             delta_proof,
             intermediate_proof,
             snapshot_proof,
-        } = proof;
+        } = match proof {
+            StateProof::Mpt(p) => p,
+            // LVMT proofs are self-contained (one key, one proof) and
+            // don't compose into the MPT delta/intermediate/snapshot
+            // merger layout. Drop them here; the LVMT RPC path should
+            // not feed into this merger.
+            StateProof::Lvmt(_) => return,
+        };
 
         if let Some(proof) = delta_proof {
             match self.delta {
@@ -98,7 +105,7 @@ impl StateProofMerger {
 use crate::impls::{
     errors::*,
     merkle_patricia_trie::{trie_proof::TrieProofNode, TrieProof},
-    state_proof::StateProof,
+    state_proof::{MptStateProof, StateProof},
 };
 use primitives::MerkleHash;
 use std::collections::HashSet;

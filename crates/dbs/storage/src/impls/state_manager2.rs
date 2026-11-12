@@ -20,9 +20,10 @@ impl DerefMut for WrappedLvmtState {
 
 impl StateDbGetOriginalMethods for WrappedLvmtState {
     fn get_original_raw_with_proof(
-        &self, _key: primitives::StorageKeyWithSpace,
+        &self, key: primitives::StorageKeyWithSpace,
     ) -> Result<(Option<Box<[u8]>>, crate::StateProof)> {
-        unimplemented!()
+        let (value, proof_bytes) = self.0.get_with_proof(key)?;
+        Ok((value, crate::StateProof::Lvmt(proof_bytes)))
     }
 
     fn get_original_storage_root(

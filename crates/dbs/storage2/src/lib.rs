@@ -21,7 +21,7 @@ use cfx_storage2::{
     backends::{
         impls::kvdb_rocksdb::WrappedRocksDb, HistoricalTableName, PendingTableName,
     },
-    LvmtStorage,
+    verify_lvmt_proof, LvmtProof, LvmtStorage,
 };
 use cfx_types::Space;
 use ethereum_types::H256;
@@ -206,6 +206,44 @@ impl LvmtState {
         self.cached_state_root = Some(state_root);
         Ok(state_root)
     }
+
+    /// Reads a key at this state and returns the LVMT proof against the state
+    /// root, serialized to bytes. Only read-only states (with a committed
+    /// `base_state`) can be proven against; proving a yet-uncommitted state
+    /// is not supported.
+    pub fn get_with_proof(
+        &self, access_key: StorageKeyWithSpace,
+    ) -> Result<(Option<Box<[u8]>>, Vec<u8>)> {
+        let view = self.base_state.as_ref().ok_or_else(|| {
+            Error::Msg(
+                "get_with_proof requires a committed base state".into(),
+            )
+        })?;
+        let key = access_key.to_key_bytes();
+
+        let backend = self.backend.read();
+        let reader = backend.as_reader()?;
+        let (lvmt_value, proof) =
+            reader.get_with_proof(view.epoch_id, &key, &AMT)?;
+
+        let value = lvmt_value.and_then(|v| v.get_value()).map(Into::into);
+        Ok((value, proof.to_bytes()))
+    }
+}
+
+/// Verifies an LVMT proof produced by [`LvmtState::get_with_proof`].
+/// Returns `Ok(Some(value))` if the key is present (`value` is empty when
+/// the key was deleted), `Ok(None)` if the key was never written, and `Err`
+/// if the proof does not check out against `state_root`.
+pub fn verify_lvmt(
+    state_root: &H256, key: &[u8], proof_bytes: &[u8],
+) -> Result<Option<Box<[u8]>>> {
+    let proof = LvmtProof::from_bytes(proof_bytes).map_err(|e| {
+        Error::Msg(format!("malformed LVMT proof bytes: {:?}", e))
+    })?;
+    let proven = verify_lvmt_proof(&AMT, state_root, key, &proof)
+        .map_err(|e| Error::Msg(format!("LVMT proof invalid: {:?}", e)))?;
+    Ok(proven.and_then(|v| v.get_value()))
 }
 
 impl StorageStateTrait for LvmtState {
