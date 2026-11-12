@@ -267,7 +267,11 @@ fn test_mpt_node_path_to_from_db_key() {
             .get_with_proof(StorageKey::AccountKey(key).with_native_space())
             .unwrap();
         assert_eq!(v, Some(value.clone().into_boxed_slice()));
-        for node in proof.delta_proof.unwrap().get_proof_nodes() {
+        let delta_proof = match proof {
+            crate::StateProof::Mpt(p) => p.delta_proof.unwrap(),
+            crate::StateProof::Lvmt(_) => panic!("MPT test got LVMT proof"),
+        };
+        for node in delta_proof.get_proof_nodes() {
             let compressed_path = node.compressed_path_ref();
             // mpt_node_path_to_db_key only works for paths with the beginning
             // nibble.

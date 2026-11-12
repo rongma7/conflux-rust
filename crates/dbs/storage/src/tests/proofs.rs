@@ -407,9 +407,15 @@ fn test_invalid_state_proof() {
         let value = value.as_ref().map(|b| &**b);
 
         // checking proof with invalid state root should fail
-        let num_proofs = opt_to_bin(&proof.delta_proof)
-            + opt_to_bin(&proof.intermediate_proof)
-            + opt_to_bin(&proof.snapshot_proof);
+        let mpt_proof = match &proof {
+            StateProof::Mpt(p) => p,
+            StateProof::Lvmt(_) => {
+                panic!("MPT test produced an LVMT proof")
+            }
+        };
+        let num_proofs = opt_to_bin(&mpt_proof.delta_proof)
+            + opt_to_bin(&mpt_proof.intermediate_proof)
+            + opt_to_bin(&mpt_proof.snapshot_proof);
 
         let invalid_root =
             get_invalid_state_root(&mut rng, root.clone(), num_proofs);
@@ -431,7 +437,7 @@ fn test_invalid_state_proof() {
         ));
 
         // checking proof with invalid intermediate mpt existence should fail.
-        if proof.intermediate_proof.is_some() {
+        if mpt_proof.intermediate_proof.is_some() {
             assert!(!proof.is_valid_kv(key, value, root.clone(), None));
 
             // Existence proof with invalid padding can be fine when delta proof
@@ -708,7 +714,7 @@ use crate::{
         new_state_manager_for_unit_test_with_snapshot_epoch_count,
         FakeStateManager, TEST_NUMBER_OF_KEYS,
     },
-    RecordingStorage,
+    RecordingStorage, StateProof,
 };
 use cfx_types::H256;
 use primitives::{

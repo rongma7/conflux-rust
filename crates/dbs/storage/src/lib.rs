@@ -132,6 +132,17 @@ pub struct StorageConfiguration {
     /// When true, the node uses the LVMT (storage2) backend instead of the
     /// original MPT (storage) backend. Default: false.
     pub use_lvmt_storage: bool,
+    /// Number of single-threaded rayon pools dedicated to LVMT proof
+    /// RPC calls. Each in-flight proof claims one pool and runs on its
+    /// one worker; excess requests get a busy error. Default: 8.
+    ///
+    /// Using N single-threaded pools (rather than one N-threaded pool)
+    /// is deliberate: rayon's work-stealing causes one request's
+    /// `par_iter` waits to pick up another request's top-level task
+    /// and run it on top of the stack, producing seconds-long p99
+    /// under concurrent peers. Single-threaded pools remove the
+    /// nested-steal path at the cost of intra-request parallelism.
+    pub lvmt_proof_pool_threads: usize,
 }
 
 impl StorageConfiguration {
@@ -182,6 +193,8 @@ impl StorageConfiguration {
             keep_era_genesis_snapshot: false,
             backup_mpt_snapshot: true,
             use_lvmt_storage: false,
+            lvmt_proof_pool_threads:
+                defaults::DEFAULT_LVMT_PROOF_POOL_THREADS,
         }
     }
 
@@ -213,6 +226,7 @@ pub use self::{
         },
         node_merkle_proof::{NodeMerkleProof, StorageRootProof},
         proof_merger::StateProofMerger,
+        proof_rpc_pool::ProofRpcPool,
         recording_storage::RecordingStorage,
         snapshot_sync::{FullSyncVerifier, MptSlicer},
         state_proof::StateProof,

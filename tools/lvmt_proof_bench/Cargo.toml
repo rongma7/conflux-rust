@@ -1,0 +1,27 @@
+[package]
+name = "lvmt_proof_bench"
+version = "0.1.0"
+edition = "2021"
+description = "End-to-end benchmark for LVMT proof reads through ProofRpcPool"
+license = "GPL-3.0"
+
+[[bin]]
+name = "lvmt_proof_bench"
+path = "src/main.rs"
+
+[dependencies]
+cfx-storage = { path = "../../crates/dbs/storage" }
+cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "612ceeb" }
+amt = { git = "https://github.com/Conflux-Chain/amt", rev = "e250a64", features = ["bls12-381"] }
+ark-bls12-381 = "0.5"
+ethereum-types = "0.9"
+rand = "0.8"
+rand_chacha = "0.3"
+tempfile = "3"
+
+# Standalone from the main workspace, same pattern as consensus_bench.
+[workspace]
+
+[profile.release]
+opt-level = 3
+lto = "thin"

@@ -31,6 +31,7 @@ use crate::{
     impls::{
         errors::*,
         node_merkle_proof::NodeMerkleProof,
+        proof_rpc_pool::ProofRpcPool,
         state::State as MptState,
         state_manager::StateManager as MptStateManagerInner,
         state_manager2::{
@@ -194,6 +195,18 @@ impl StateManager {
             }
             Backend::Lvmt(l) => {
                 StorageBackendRef::Lvmt(l.get_storage_manager())
+            }
+        }
+    }
+
+    /// Dedicated rayon pool + concurrency cap for LVMT proof RPC calls.
+    /// Returns `None` on the MPT backend, where MPT trie proofs are
+    /// cheap and don't need the pool.
+    pub fn proof_rpc_pool(&self) -> Option<&Arc<ProofRpcPool>> {
+        match &self.backend {
+            Backend::Mpt(_) => None,
+            Backend::Lvmt(l) => {
+                Some(l.get_storage_manager().proof_rpc_pool())
             }
         }
     }

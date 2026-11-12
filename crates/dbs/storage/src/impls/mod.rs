@@ -7,6 +7,7 @@ pub(super) mod merkle_patricia_trie;
 pub(super) mod delta_mpt;
 pub(super) mod node_merkle_proof;
 pub(super) mod proof_merger;
+pub(super) mod proof_rpc_pool;
 pub(super) mod recording_storage;
 pub(super) mod replicated_state;
 pub(super) mod single_mpt_state;
@@ -46,6 +47,14 @@ pub mod defaults {
     /// MPT, so setting this to 4 allows to access two states at the same
     /// time.
     pub const DEFAULT_MAX_OPEN_MPT: u32 = 4;
+
+    /// Default number of single-threaded rayon pools for LVMT proof
+    /// RPC calls. Each in-flight proof claims one pool; this also caps
+    /// concurrency. 8 is sized against a typical 8-core proof host.
+    /// Reference bench on 8 pools + 8 concurrent peers: p99 ~250 ms,
+    /// throughput ~43 req/s. See `proof_rpc_pool.rs` for why we use
+    /// many 1-thread pools rather than one N-thread pool.
+    pub const DEFAULT_LVMT_PROOF_POOL_THREADS: usize = 8;
 
     use super::delta_mpt::node_memory_manager::DeltaMptsNodeMemoryManager;
 }

@@ -51,6 +51,11 @@ pub struct LvmtStateManagerWithConf {
     // The `()` in `Mutex<()>` indicates this mutex is used for mutual exclusion only,
     // not for protecting any data.
     maintenance_lock: Mutex<()>,
+
+    /// Dedicated rayon pool + concurrency cap for proof RPC calls. Isolates
+    /// amt `par_iter` from the global pool so proof RPCs cannot contend
+    /// with state commit.
+    proof_rpc_pool: Arc<ProofRpcPool>,
 }
 
 impl LvmtStateManagerWithConf {
@@ -59,14 +64,21 @@ impl LvmtStateManagerWithConf {
             storage_conf.path_storage_dir.join("lvmt_historical"),
             storage_conf.path_storage_dir.join("lvmt_pending"),
         );
+        let proof_rpc_pool = Arc::new(
+            ProofRpcPool::new(storage_conf.lvmt_proof_pool_threads)
+                .expect("proof RPC pool initialization failed"),
+        );
         Arc::new(Self {
             lvmt_manager,
             storage_conf,
             intermediate_trie_root_merkle: RwLock::new(None),
             persist_state_from_initialization: RwLock::new(None),
             maintenance_lock: Mutex::new(()),
+            proof_rpc_pool,
         })
     }
+
+    pub fn proof_rpc_pool(&self) -> &Arc<ProofRpcPool> { &self.proof_rpc_pool }
 }
 
 // Methods for LvmtStateManagerWithConf as a peer of StorageManager
@@ -281,7 +293,8 @@ impl StateManagerTrait for StateManager2 {
 
 use crate::{
     impls::errors::*, snapshot_manager::SnapshotManagerTrait, state::*,
-    state_manager::*, storage_db::SnapshotInfo, StorageConfiguration,
+    state_manager::*, storage_db::SnapshotInfo, ProofRpcPool,
+    StorageConfiguration,
 };
 use cfx_internal_common::{
     consensus_api::StateMaintenanceTrait, StateAvailabilityBoundary,

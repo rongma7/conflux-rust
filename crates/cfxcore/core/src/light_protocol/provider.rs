@@ -546,13 +546,38 @@ impl Provider {
         self.throttle(peer, &req)?;
         let request_id = req.request_id;
 
-        let it = req
-            .keys
-            .into_iter()
-            .take(MAX_ITEMS_TO_SEND)
-            .map(|key| self.state_entry(key));
+        let keys: Vec<_> =
+            req.keys.into_iter().take(MAX_ITEMS_TO_SEND).collect();
 
-        let (entries, errors) = partition_results(it);
+        // LVMT proof generation uses amt's rayon par_iter; running it on
+        // the global pool contends with state commit. The storage manager
+        // supplies a dedicated pool (`None` on MPT, where trie proofs
+        // don't need isolation). When the pool is saturated, return an
+        // empty response rather than queue the batch, so the requesting
+        // peer retries against another provider.
+        let compute = || {
+            let it = keys.into_iter().map(|key| self.state_entry(key));
+            partition_results(it)
+        };
+        let pool = self
+            .consensus
+            .data_manager()
+            .storage_manager
+            .proof_rpc_pool()
+            .cloned();
+        let (entries, errors) = match pool {
+            None => compute(),
+            Some(pool) => match pool.try_run(compute) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    debug!(
+                        "GetStateEntries dropped, proof RPC pool busy: {:?}",
+                        e
+                    );
+                    (vec![], vec![])
+                }
+            },
+        };
 
         if !errors.is_empty() {
             debug!(
