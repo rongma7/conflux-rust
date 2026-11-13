@@ -21,7 +21,7 @@ use cfx_storage2::{
     backends::{
         impls::kvdb_rocksdb::WrappedRocksDb, HistoricalTableName, PendingTableName,
     },
-    verify_lvmt_proof, LvmtProof, LvmtStorage,
+    verify_lvmt_proof, LvmtProof, LvmtStorage, PreparedCommit,
 };
 use cfx_types::Space;
 use ethereum_types::H256;
@@ -63,6 +63,12 @@ pub struct LvmtState {
     /// For read-only LvmtState, `None` is unreachable.
     /// For writable LvmtState, `Some` means after invoking `compute_state_root()`, `None` means before invoking `compute_state_root()`.
     cached_state_root: Option<MerkleHash>,
+    /// A `PreparedCommit` built by the latest `compute_state_root()` on the
+    /// current `changes` and `base_state`. `commit()` consumes it via
+    /// `commit_prepared`, skipping the second compute. Cleared together with
+    /// `cached_state_root` whenever `changes` is modified or a commit has
+    /// drained it. Always `None` on read-only states.
+    cached_prepared: Option<PreparedCommit>,
 }
 
 pub struct LvmtStateManager {
@@ -119,7 +125,11 @@ impl LvmtState {
     ) -> Result<()> {
         if let Some(map) = self.changes.as_mut() {
             map.insert(key, value);
-            self.cached_state_root = None;  // Invalidate cache
+            // Invalidate both caches: the state root we previously handed
+            // out and the prepared-commit payload are tied to the pre-change
+            // set of `changes`.
+            self.cached_state_root = None;
+            self.cached_prepared = None;
             Ok(())
         } else {
             Err(Error::Msg(
@@ -198,12 +208,16 @@ impl LvmtState {
             .flat_map(|map| map.iter())
             .map(|(k, v)| (k.clone(), v.clone()));
 
-        let state_root = self
+        // Compute everything the commit would write and keep it. commit()
+        // later feeds it to `commit_prepared`, skipping the second compute.
+        let prepared = self
             .backend
             .read()
-            .commit_dry_run(base, changes_iter, &AMT)?;
+            .prepare_commit(base, changes_iter, &AMT)?;
+        let state_root = prepared.state_root();
 
         self.cached_state_root = Some(state_root);
+        self.cached_prepared = Some(prepared);
         Ok(state_root)
     }
 
@@ -378,6 +392,10 @@ impl StorageStateTrait for LvmtState {
             .as_mut()
             .map(|map_ref| std::mem::take(map_ref))
             .unwrap_or_default();
+        // Take the prepared payload: either we feed it to commit_prepared
+        // below, or on early return / fallback we discard it to keep the
+        // "prepared tied to pre-commit changes" invariant.
+        let cached_prepared = self.cached_prepared.take();
 
         // Hold write lock for entire check-and-commit operation
         let mut guard = self.backend.write();
@@ -390,16 +408,21 @@ impl StorageStateTrait for LvmtState {
             return Ok(StateRootWithAuxInfo::genesis(&state_root))
         }
 
-        // The new LvmtStore::commit computes the state root internally and
-        // returns it; dry-run and real commit share the same computation,
-        // so this agrees with any value previously handed out by
-        // compute_state_root for the same `changes` on this base.
-        let state_root = manager.commit(
-            self.base_state.as_ref().map(|state| state.epoch_id),
-            epoch,
-            changes_inner.into_iter(),
-            &AMT,
-        )?;
+        // Fast path: compute_state_root already built the prepared payload
+        // for this `changes` on this base. commit_prepared writes it without
+        // recomputing. Falls back to the full `commit` path when the cache
+        // was invalidated (changes mutated after the compute, or commit
+        // called without a preceding compute) — the returned state root
+        // agrees either way because both paths share the same computation.
+        let state_root = match cached_prepared {
+            Some(prepared) => manager.commit_prepared(epoch, prepared)?,
+            None => manager.commit(
+                self.base_state.as_ref().map(|state| state.epoch_id),
+                epoch,
+                changes_inner.into_iter(),
+                &AMT,
+            )?,
+        };
 
         self.cached_state_root = Some(state_root);
         Ok(StateRootWithAuxInfo::genesis(&state_root))
@@ -425,6 +448,7 @@ impl LvmtStateManager {
                 }),
                 changes: None,
                 cached_state_root: Some(state_root),
+                cached_prepared: None,
             }))
         } else {
             Ok(None)
@@ -458,6 +482,7 @@ impl StorageManagerTrait for LvmtStateManager {
             }),
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
+            cached_prepared: None,
         })))
     }
 
@@ -469,6 +494,7 @@ impl StorageManagerTrait for LvmtStateManager {
             base_state: None,
             changes: Some(BTreeMap::new()),
             cached_state_root: None,
+            cached_prepared: None,
         })
     }
 }
