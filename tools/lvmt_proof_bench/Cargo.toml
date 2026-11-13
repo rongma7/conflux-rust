@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 cfx-storage = { path = "../../crates/dbs/storage" }
-cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "612ceeb" }
+cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "bbdc34d" }
 amt = { git = "https://github.com/Conflux-Chain/amt", rev = "e250a64", features = ["bls12-381"] }
 ark-bls12-381 = "0.5"
 ethereum-types = "0.9"
