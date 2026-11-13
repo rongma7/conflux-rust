@@ -13,14 +13,19 @@
 //! first request to wait for the stolen one. Measured on 8 peers with
 //! one 8-thread pool: p99 ~2.5 s, max ~7 s.
 //!
-//! Instead the pool here holds `N` **single-threaded** rayon pools plus
-//! a matching capacity gate. Each in-flight request runs on one
-//! dedicated worker so the nested stealing path is gone. The trade-off:
-//! each request loses the intra-request par_iter parallelism, so a
-//! lone request is slower than it would be on a single multi-thread
-//! pool. Under 8 concurrent peers, upstream's reference bench reports
-//! p99 ~250 ms with 8 single-threaded pools against p99 2.5 s with one
-//! 8-thread pool.
+//! Instead the pool here holds `N` **single-threaded** rayon pools.
+//! Each in-flight request runs on one dedicated worker so the nested
+//! stealing path is gone. The trade-off: each request loses the
+//! intra-request par_iter parallelism, so a lone request is slower
+//! than it would be on a single multi-thread pool. Under 8 concurrent
+//! peers, upstream's reference bench reports p99 ~250 ms with 8
+//! single-threaded pools against p99 2.5 s with one 8-thread pool.
+//!
+//! A single list of free pool indices acts as both the "which pool to
+//! use" and the "is there a free pool at all" signal: `pop()` returning
+//! `None` means the pool is saturated. The slot is wrapped in a Drop
+//! guard, so a panic inside the installed closure still returns the
+//! pool to the free list instead of permanently leaking it.
 //!
 //! The single config knob is set via `StorageConfiguration`:
 //! - `lvmt_proof_pool_threads` — number of single-threaded pools, and
@@ -31,16 +36,24 @@ use super::errors::{Error, Result};
 use parking_lot::Mutex;
 use rayon::ThreadPool;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
 
 pub struct ProofRpcPool {
     pools: Vec<Arc<ThreadPool>>,
-    sem: Arc<Semaphore>,
-    /// Indices of pools that are currently free. Protected by a mutex
-    /// but only touched briefly on acquire / release. The semaphore
-    /// guarantees this list is non-empty whenever a permit has been
-    /// taken.
+    /// Indices of pools that are currently free. `pop()` returning
+    /// `None` is the single source of truth for "all pools busy".
     available: Arc<Mutex<Vec<usize>>>,
+}
+
+/// Holds a reserved pool index until dropped. Drop runs on both the
+/// success path and during unwinding from a panic inside `install`, so
+/// a panicking closure cannot permanently leak a pool slot.
+struct PoolSlot<'a> {
+    available: &'a Mutex<Vec<usize>>,
+    idx: usize,
+}
+
+impl<'a> Drop for PoolSlot<'a> {
+    fn drop(&mut self) { self.available.lock().push(self.idx); }
 }
 
 impl ProofRpcPool {
@@ -64,61 +77,31 @@ impl ProofRpcPool {
                 })?;
             pools.push(Arc::new(pool));
         }
-        let sem = Arc::new(Semaphore::new(num_pools));
         let available = Arc::new(Mutex::new((0..num_pools).collect()));
-        Ok(Self {
-            pools,
-            sem,
-            available,
-        })
+        Ok(Self { pools, available })
     }
 
     pub fn num_pools(&self) -> usize { self.pools.len() }
 
-    pub fn available_permits(&self) -> usize { self.sem.available_permits() }
+    pub fn available_permits(&self) -> usize { self.available.lock().len() }
 
-    /// Acquires a permit without waiting, then runs `f` on the pool
-    /// that permit reserves. Returns `Err(Busy)` if all pools are in
-    /// use.
+    /// Reserves a free pool and runs `f` on it. Returns `Err(Busy)`
+    /// when every pool is already in use. If `f` panics, the panic is
+    /// propagated to the caller and the slot is still returned to the
+    /// free list.
     pub fn try_run<F, R>(&self, f: F) -> Result<R>
     where
         F: FnOnce() -> R + Send,
         R: Send,
     {
-        let permit = self.sem.try_acquire().map_err(|_| {
+        let idx = self.available.lock().pop().ok_or_else(|| {
             Error::Msg("proof RPC pool busy, retry later".into())
         })?;
-        let idx = self
-            .available
-            .lock()
-            .pop()
-            .expect("semaphore invariant: available has >= 1 slot while a permit is held");
-        let result = self.pools[idx].install(f);
-        self.available.lock().push(idx);
-        drop(permit);
-        Ok(result)
-    }
-
-    /// Acquires a permit asynchronously (awaiting if all pools are in
-    /// use), then runs `f` on the pool that permit reserves. Must be
-    /// called from within a tokio runtime.
-    pub async fn run_async<F, R>(&self, f: F) -> Result<R>
-    where
-        F: FnOnce() -> R + Send,
-        R: Send,
-    {
-        let permit = self.sem.acquire().await.map_err(|e| {
-            Error::Msg(format!("proof RPC semaphore closed: {}", e))
-        })?;
-        let idx = self
-            .available
-            .lock()
-            .pop()
-            .expect("semaphore invariant: available has >= 1 slot while a permit is held");
-        let result = self.pools[idx].install(f);
-        self.available.lock().push(idx);
-        drop(permit);
-        Ok(result)
+        let _slot = PoolSlot {
+            available: &self.available,
+            idx,
+        };
+        Ok(self.pools[idx].install(f))
     }
 }
 
@@ -167,5 +150,34 @@ mod tests {
         drop(held);
         t.join().unwrap();
         assert_eq!(pool.available_permits(), 1);
+    }
+
+    #[test]
+    fn try_run_returns_slot_on_panic() {
+        let pool = ProofRpcPool::new(2).unwrap();
+        assert_eq!(pool.available_permits(), 2);
+
+        // Silence the panic print from the rayon worker so test output
+        // stays readable; the catch_unwind below still observes it.
+        let prev_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || pool.try_run::<_, ()>(|| panic!("boom")).unwrap(),
+        ));
+        std::panic::set_hook(prev_hook);
+
+        assert!(result.is_err(), "panic must propagate to the caller");
+        assert_eq!(
+            pool.available_permits(),
+            2,
+            "slot must be returned after the closure panics"
+        );
+
+        // Pool is still fully usable after the panic.
+        for _ in 0..4 {
+            let x = pool.try_run(|| 1u32).unwrap();
+            assert_eq!(x, 1);
+        }
+        assert_eq!(pool.available_permits(), 2);
     }
 }
