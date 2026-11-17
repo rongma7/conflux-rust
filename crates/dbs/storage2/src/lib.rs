@@ -108,7 +108,7 @@ impl LvmtStateManager {
     }
 
     pub fn background_cleanup(&self) -> Result<()> {
-        let mut guard = self.backend.write();
+        let guard = self.backend.write();
         Ok(guard.background_cleanup()?)
     }
 
