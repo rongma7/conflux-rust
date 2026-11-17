@@ -21,7 +21,8 @@ use cfx_storage2::{
     backends::{
         impls::kvdb_rocksdb::WrappedRocksDb, HistoricalTableName, PendingTableName,
     },
-    verify_lvmt_proof, LvmtProof, LvmtStorage, PreparedCommit,
+    verify_lvmt_proof, LvmtProof, LvmtStorage, PendingCleanup, PendingSnapshot,
+    PreparedCommit,
 };
 use cfx_types::Space;
 use ethereum_types::H256;
@@ -97,25 +98,87 @@ impl LvmtStateManager {
         Ok(manager.make_pivot(commit_id)?)
     }
 
-    pub fn confirmed_pending_to_history(
-        &self, new_root_height: u64, pivot_commit_id: H256,
-    ) -> Result<()> {
+    /// Acquires the backend write lock once, performs the lock-held portion
+    /// of the pending-to-history migration (when `migrate` is `Some`) and
+    /// hands back a cleanup task, then releases the lock.
+    ///
+    /// The returned [`LvmtMaintenance`] carries the snapshot write and the
+    /// GC, both detached from the backend. Call `spawn` on it to run them
+    /// on a background thread — doing so inside the lock, or on the
+    /// consensus worker, defeats the purpose of this split.
+    pub fn maintenance_deferred(
+        &self, migrate: Option<(u64, H256)>,
+    ) -> Result<LvmtMaintenance> {
         let mut guard = self.backend.write();
-        Ok(guard.confirmed_pending_to_history_with_height(
-            new_root_height,
-            pivot_commit_id,
-        )?)
-    }
-
-    pub fn background_cleanup(&self) -> Result<()> {
-        let guard = self.backend.write();
-        Ok(guard.background_cleanup()?)
+        let snapshot = if let Some((new_root_height, pivot_commit_id)) =
+            migrate
+        {
+            guard.confirmed_pending_to_history_with_height_deferring_snapshot(
+                new_root_height,
+                pivot_commit_id,
+            )?
+        } else {
+            None
+        };
+        let cleanup = guard.pending_cleanup()?;
+        Ok(LvmtMaintenance { snapshot, cleanup })
     }
 
     // Read operations: use read() + as_reader()
 
     pub fn is_newer_than_pending_root(&self, height: u64) -> Result<bool> {
         Ok(self.backend.read().as_reader()?.is_newer_than_pending_root(height))
+    }
+}
+
+/// Snapshot write + pending GC handed out by
+/// [`LvmtStateManager::maintenance_deferred`]. Both parts are detached from
+/// the backend lock; run them on a background thread so they do not stall
+/// the consensus worker.
+pub struct LvmtMaintenance {
+    pub snapshot: Option<PendingSnapshot<WrappedRocksDb<PendingTableName>>>,
+    pub cleanup: Option<PendingCleanup<WrappedRocksDb<PendingTableName>>>,
+}
+
+impl LvmtMaintenance {
+    /// Fires a detached OS thread that runs the snapshot write and then the
+    /// cleanup, logging any error. A no-op when both parts are `None`.
+    ///
+    /// Overlapping calls are safe: upstream guarantees snapshot writes and
+    /// cleanups are idempotent across concurrent runs. If spawning the
+    /// thread fails, the tasks are dropped: skipping them only costs a
+    /// longer recovery and more WAL records kept until the next snapshot.
+    pub fn spawn(self) {
+        if self.snapshot.is_none() && self.cleanup.is_none() {
+            return;
+        }
+        let LvmtMaintenance { snapshot, cleanup } = self;
+        let spawned = std::thread::Builder::new()
+            .name("lvmt-maintain".into())
+            .spawn(move || {
+                if let Some(snap) = snapshot {
+                    if let Err(e) = snap.run() {
+                        log::error!(
+                            "LVMT pending snapshot task failed: {:?}",
+                            e
+                        );
+                    }
+                }
+                if let Some(cleanup) = cleanup {
+                    if let Err(e) = cleanup.run() {
+                        log::error!(
+                            "LVMT pending cleanup task failed: {:?}",
+                            e
+                        );
+                    }
+                }
+            });
+        if let Err(e) = spawned {
+            log::error!(
+                "failed to spawn LVMT maintenance thread: {:?}; skipping snapshot/cleanup this round",
+                e
+            );
+        }
     }
 }
 

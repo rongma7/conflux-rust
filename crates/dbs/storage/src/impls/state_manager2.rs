@@ -168,28 +168,27 @@ impl LvmtStateManagerWithConf {
             .lvmt_manager
             .is_newer_than_pending_root(first_available_state_height)?;
         if non_pivot_removed || adjust_pending_root {
-            {
-                // TODO: Archive node may do something different.
-                let state_boundary = &mut *state_availability_boundary.write();
-                if first_available_state_height > state_boundary.lower_bound {
-                    state_boundary
-                        .adjust_lower_bound(first_available_state_height);
-                }
-            }
-
-            // change pending root to be the new
-            // `state_availability_boundary.lower_bound`
-            if adjust_pending_root {
-                self.lvmt_manager.confirmed_pending_to_history(
-                    first_available_state_height,
-                    maintained_epoch_id,
-                )?;
+            // TODO: Archive node may do something different.
+            let state_boundary = &mut *state_availability_boundary.write();
+            if first_available_state_height > state_boundary.lower_bound {
+                state_boundary
+                    .adjust_lower_bound(first_available_state_height);
             }
         }
 
+        // Prepare the pending-to-history migration (when due) and the GC
+        // under a single write lock, then drop the lock before running the
+        // snapshot write and GC on a background thread.
+        let migrate = if adjust_pending_root {
+            Some((first_available_state_height, maintained_epoch_id))
+        } else {
+            None
+        };
+        let maintenance = self.lvmt_manager.maintenance_deferred(migrate)?;
+
         info!("maintain_state_confirmed: finished");
 
-        self.lvmt_manager.background_cleanup()?;
+        maintenance.spawn();
 
         Ok(())
     }
