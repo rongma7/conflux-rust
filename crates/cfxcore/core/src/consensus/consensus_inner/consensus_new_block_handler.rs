@@ -30,8 +30,17 @@ use std::{
     cmp::{max, min},
     collections::{BinaryHeap, HashMap, HashSet, VecDeque},
     slice::Iter,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
+
+/// Call `notify_state_confirmed` only when the confirmed height has
+/// advanced by at least this many blocks since the last call. Batching
+/// here reduces the worker-thread lock contention on the storage
+/// backend's maintenance lock.
+const MAINTAIN_STATE_BATCH_INTERVAL: u64 = 100;
 
 pub struct ConsensusNewBlockHandler {
     conf: ConsensusConfig,
@@ -53,6 +62,10 @@ pub struct ConsensusNewBlockHandler {
     node_type: NodeType,
 
     pivot_hint: Option<Arc<PivotHint>>,
+
+    /// Last confirmed height the handler actually called
+    /// `notify_state_confirmed` for, used to batch calls.
+    last_maintained_height: AtomicU64,
 }
 
 /// ConsensusNewBlockHandler contains all sub-routines for handling new arriving
@@ -82,7 +95,35 @@ impl ConsensusNewBlockHandler {
             blame_verifier,
             node_type,
             pivot_hint,
+            last_maintained_height: AtomicU64::new(0),
         }
+    }
+
+    /// Call `notify_state_confirmed` only when `confirmed_height` has
+    /// advanced by at least `MAINTAIN_STATE_BATCH_INTERVAL` blocks since
+    /// the last call that actually ran (or when it reaches 0, matching the
+    /// legacy per-block behavior at startup). Returns the new openable
+    /// lower bound the engine reports, or `None` when the call was batched
+    /// away this round.
+    fn batched_notify_state_confirmed(
+        &self, inner: &ConsensusGraphInner, confirmed_height: u64,
+    ) -> Option<u64> {
+        let last_maintained =
+            self.last_maintained_height.load(Ordering::Relaxed);
+        if confirmed_height < last_maintained + MAINTAIN_STATE_BATCH_INTERVAL
+            && confirmed_height != 0
+        {
+            return None;
+        }
+        let bound = self.storage.notify_state_confirmed(&StateConfirmedFacts {
+            data_man: &self.data_man,
+            confirmed_height,
+            stable_checkpoint_height: inner.cur_era_stable_height,
+            era_epoch_count: self.conf.inner_conf.era_epoch_count,
+        });
+        self.last_maintained_height
+            .store(confirmed_height, Ordering::Relaxed);
+        Some(bound)
     }
 
     /// Return (old_era_block_set, new_era_block_set).
@@ -1655,16 +1696,13 @@ impl ConsensusNewBlockHandler {
             }
             confirmed_height =
                 inner.confirmed_height_for_state_maintenance(confirmed_height);
-            let physical_openable_lower_bound =
-                self.storage.notify_state_confirmed(&StateConfirmedFacts {
-                    data_man: &self.data_man,
-                    confirmed_height,
-                    stable_checkpoint_height: inner.cur_era_stable_height,
-                    era_epoch_count: self.conf.inner_conf.era_epoch_count,
-                });
-            self.adjust_state_availability_lower_bound(
-                physical_openable_lower_bound,
-            );
+            if let Some(physical_openable_lower_bound) =
+                self.batched_notify_state_confirmed(inner, confirmed_height)
+            {
+                self.adjust_state_availability_lower_bound(
+                    physical_openable_lower_bound,
+                );
+            }
             self.set_block_tx_packed(inner, me);
             self.delayed_tx_recycle_in_skipped_blocks(inner, capped_fork_at);
 
@@ -2116,21 +2154,13 @@ impl ConsensusNewBlockHandler {
                             confirmed_height,
                         );
 
-                    let physical_openable_lower_bound = self
-                        .storage
-                        .notify_state_confirmed(&StateConfirmedFacts {
-                            data_man: &self.data_man,
-                            confirmed_height,
-                            stable_checkpoint_height: inner
-                                .cur_era_stable_height,
-                            era_epoch_count: self
-                                .conf
-                                .inner_conf
-                                .era_epoch_count,
-                        });
-                    self.adjust_state_availability_lower_bound(
-                        physical_openable_lower_bound,
-                    );
+                    if let Some(physical_openable_lower_bound) = self
+                        .batched_notify_state_confirmed(inner, confirmed_height)
+                    {
+                        self.adjust_state_availability_lower_bound(
+                            physical_openable_lower_bound,
+                        );
+                    }
                 }
             }
         }

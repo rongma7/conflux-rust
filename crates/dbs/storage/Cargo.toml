@@ -41,7 +41,9 @@ sqlite3-sys = { workspace = true }
 strfmt = { workspace = true }
 
 tokio = { workspace = true, features = ["sync"] }
+rayon = { workspace = true }
 cfx-util-macros = { workspace = true }
+storage2 = { workspace = true }
 
 [dev-dependencies]
 primitives = { workspace = true, features = ["test_no_account_length_check"] }

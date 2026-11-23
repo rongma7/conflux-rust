@@ -8,5 +8,8 @@ license-file.workspace = true
 log = { workspace = true }
 kvdb-rocksdb = { workspace = true }
 
+# kvdb-rocksdb no longer exposes a `portable` feature after the parity-common
+# upgrade; the compile-time toggle it stood for lives in the rocksdb binding
+# itself and is picked up implicitly.
 [features]
-portable = ["kvdb-rocksdb/portable"]
+portable = []

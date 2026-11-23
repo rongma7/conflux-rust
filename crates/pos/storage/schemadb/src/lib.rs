@@ -24,7 +24,7 @@ pub mod schema;
 use crate::schema::{KeyCodec, Schema, SeekKeyCodec, ValueCodec};
 use anyhow::{ensure, format_err, Result};
 use diem_logger::prelude::*;
-use rocksdb::Writable;
+use rocksdb::{Direction, FlushOptions, IteratorMode};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::Iterator,
@@ -36,7 +36,7 @@ use std::{
 pub type ReadOptions = rocksdb::ReadOptions;
 
 /// Type alias to `rocksdb::Options`.
-pub type Options = rocksdb::DBOptions;
+pub type Options = rocksdb::Options;
 
 /// Type alias to improve readability.
 pub type ColumnFamilyName = &'static str;
@@ -97,7 +97,7 @@ pub enum ScanDirection {
 /// DB Iterator parameterized on [`Schema`] that seeks with [`Schema::Key`] and
 /// yields [`Schema::Key`] and [`Schema::Value`]
 pub struct SchemaIterator<'a, S> {
-    db_iter: rocksdb::DBIterator<&'a rocksdb::DB>,
+    db_iter: rocksdb::DBIterator<'a>,
     direction: ScanDirection,
     phantom: PhantomData<S>,
 }
@@ -105,9 +105,7 @@ pub struct SchemaIterator<'a, S> {
 impl<'a, S> SchemaIterator<'a, S>
 where S: Schema
 {
-    fn new(
-        db_iter: rocksdb::DBIterator<&'a rocksdb::DB>, direction: ScanDirection,
-    ) -> Self {
+    fn new(db_iter: rocksdb::DBIterator<'a>, direction: ScanDirection) -> Self {
         SchemaIterator {
             db_iter,
             direction,
@@ -117,12 +115,20 @@ where S: Schema
 
     /// Seeks to the first key.
     pub fn seek_to_first(&mut self) {
-        self.db_iter.seek(rocksdb::SeekKey::Start).unwrap();
+        let direction = match self.direction {
+            ScanDirection::Forward => Direction::Forward,
+            ScanDirection::Backward => Direction::Reverse,
+        };
+        self.db_iter.set_mode_start_with_direction(direction);
     }
 
     /// Seeks to the last key.
     pub fn seek_to_last(&mut self) {
-        self.db_iter.seek(rocksdb::SeekKey::End).unwrap();
+        let direction = match self.direction {
+            ScanDirection::Forward => Direction::Forward,
+            ScanDirection::Backward => Direction::Reverse,
+        };
+        self.db_iter.set_mode_end_with_direction(direction);
     }
 
     /// Seeks to the first key whose binary representation is equal to or
@@ -130,7 +136,7 @@ where S: Schema
     pub fn seek<SK>(&mut self, seek_key: &SK) -> Result<()>
     where SK: SeekKeyCodec<S> {
         let key = <SK as SeekKeyCodec<S>>::encode_seek_key(seek_key)?;
-        self.db_iter.seek(rocksdb::SeekKey::Key(&key)).unwrap();
+        self.db_iter.seek(&key);
         Ok(())
     }
 
@@ -141,29 +147,22 @@ where S: Schema
     pub fn seek_for_prev<SK>(&mut self, seek_key: &SK) -> Result<()>
     where SK: SeekKeyCodec<S> {
         let key = <SK as SeekKeyCodec<S>>::encode_seek_key(seek_key)?;
-        self.db_iter
-            .seek_for_prev(rocksdb::SeekKey::Key(&key))
-            .unwrap();
+        self.db_iter.seek_for_prev(&key);
         Ok(())
     }
 
     fn next_impl(&mut self) -> Result<Option<(S::Key, S::Value)>> {
-        if !self.db_iter.valid().unwrap() {
-            return Ok(None);
+        let maybe_key_value = self.db_iter.next();
+        if let Some(key_value) = maybe_key_value {
+            let (raw_key, raw_value) = key_value?;
+
+            let key = <S::Key as KeyCodec<S>>::decode_key(&raw_key)?;
+            let value = <S::Value as ValueCodec<S>>::decode_value(&raw_value)?;
+
+            Ok(Some((key, value)))
+        } else {
+            Ok(None)
         }
-
-        let raw_key = self.db_iter.key();
-        let raw_value = self.db_iter.value();
-
-        let key = <S::Key as KeyCodec<S>>::decode_key(raw_key)?;
-        let value = <S::Value as ValueCodec<S>>::decode_value(raw_value)?;
-
-        match self.direction {
-            ScanDirection::Forward => self.db_iter.next().unwrap(),
-            ScanDirection::Backward => self.db_iter.prev().unwrap(),
-        };
-
-        Ok(Some((key, value)))
     }
 }
 
@@ -175,17 +174,21 @@ where S: Schema
     fn next(&mut self) -> Option<Self::Item> { self.next_impl().transpose() }
 }
 
-/// All the RocksDB methods return `std::result::Result<T, String>`. Since our
-/// methods return `anyhow::Result<T>`, manual conversion is needed.
-fn convert_rocksdb_err(msg: String) -> anyhow::Error {
-    format_err!("RocksDB internal error: {}.", msg)
+/// All the RocksDB methods return `std::result::Result<T, rocksdb::Error>`.
+/// Since our methods return `anyhow::Result<T>`, manual conversion is needed.
+fn convert_rocksdb_err(err: rocksdb::Error) -> anyhow::Error {
+    format_err!("RocksDB internal error: {}.", err.into_string())
 }
 
 /// This DB is a schematized RocksDB wrapper where all data passed in and out
 /// are typed according to [`Schema`]s.
 #[derive(Debug)]
 pub struct DB {
+    // The display name is only needed at construction time (one info log
+    // line); it used to label metrics counters, but those were removed with
+    // the diem-metrics layer.
     inner: rocksdb::DB,
+    cf_names: Vec<ColumnFamilyName>,
 }
 
 impl DB {
@@ -225,26 +228,21 @@ impl DB {
         db_opts: Options, path: impl AsRef<Path>, name: &'static str,
         column_families: Vec<ColumnFamilyName>,
     ) -> Result<DB> {
-        let inner = rocksdb::DB::open_cf(
-            db_opts,
+        let inner = rocksdb::DB::open_cf_descriptors(
+            &db_opts,
             path.as_ref().to_str().ok_or_else(|| {
                 format_err!(
                     "Path {:?} can not be converted to string.",
                     path.as_ref()
                 )
             })?,
-            column_families
-                .iter()
-                .map(|cf_name| {
-                    let cf_opts = rocksdb::ColumnFamilyOptions::default();
-                    rocksdb::rocksdb_options::ColumnFamilyDescriptor::new(
-                        *cf_name, cf_opts,
-                    )
-                })
-                .collect(),
+            column_families.iter().map(|cf_name| {
+                let cf_opts = rocksdb::Options::default();
+                rocksdb::ColumnFamilyDescriptor::new(*cf_name, cf_opts)
+            }),
         )
         .map_err(convert_rocksdb_err)?;
-        Ok(Self::log_construct(name, inner))
+        Ok(Self::log_construct(name, inner, column_families))
     }
 
     fn open_cf_readonly(
@@ -252,33 +250,30 @@ impl DB {
         column_families: Vec<ColumnFamilyName>,
     ) -> Result<DB> {
         let error_if_log_file_exists = false;
-        let inner = rocksdb::DB::open_cf_for_read_only(
-            opts,
+        let inner = rocksdb::DB::open_cf_descriptors_read_only(
+            &opts,
             path.as_ref().to_str().ok_or_else(|| {
                 format_err!(
                     "Path {:?} can not be converted to string.",
                     path.as_ref()
                 )
             })?,
-            column_families
-                .iter()
-                .map(|cf_name| {
-                    let cf_opts = rocksdb::ColumnFamilyOptions::default();
-                    rocksdb::rocksdb_options::ColumnFamilyDescriptor::new(
-                        *cf_name, cf_opts,
-                    )
-                })
-                .collect(),
+            column_families.iter().map(|cf_name| {
+                let cf_opts = rocksdb::Options::default();
+                rocksdb::ColumnFamilyDescriptor::new(*cf_name, cf_opts)
+            }),
             error_if_log_file_exists,
         )
         .map_err(convert_rocksdb_err)?;
 
-        Ok(Self::log_construct(name, inner))
+        Ok(Self::log_construct(name, inner, column_families))
     }
 
-    fn log_construct(name: &'static str, inner: rocksdb::DB) -> DB {
+    fn log_construct(
+        name: &'static str, inner: rocksdb::DB, cf_names: Vec<ColumnFamilyName>,
+    ) -> DB {
         diem_info!(rocksdb_name = name, "Opened RocksDB.");
-        DB { inner }
+        DB { inner, cf_names }
     }
 
     /// Reads single record by key.
@@ -331,8 +326,13 @@ impl DB {
         &self, opts: ReadOptions, direction: ScanDirection,
     ) -> Result<SchemaIterator<'_, S>> {
         let cf_handle = self.get_cf_handle(S::COLUMN_FAMILY_NAME)?;
+        // Now the iterator_mode is set with no initial key.
+        let iterator_mode = match direction {
+            ScanDirection::Forward => IteratorMode::Start,
+            ScanDirection::Backward => IteratorMode::End,
+        };
         Ok(SchemaIterator::new(
-            self.inner.iter_cf_opt(cf_handle, opts),
+            self.inner.iterator_cf_opt(cf_handle, opts, iterator_mode),
             direction,
         ))
     }
@@ -355,17 +355,15 @@ impl DB {
     pub fn write_schemas(
         &self, batch: SchemaBatch, fast_write: bool,
     ) -> Result<()> {
-        let db_batch = rocksdb::WriteBatch::default();
+        let mut db_batch = rocksdb::WriteBatch::default();
         for (cf_name, rows) in &batch.rows {
             let cf_handle = self.get_cf_handle(cf_name)?;
             for (key, write_op) in rows {
                 match write_op {
                     WriteOp::Value(value) => {
-                        db_batch.put_cf(cf_handle, key, value).unwrap()
+                        db_batch.put_cf(cf_handle, key, value)
                     }
-                    WriteOp::Deletion => {
-                        db_batch.delete_cf(cf_handle, key).unwrap()
-                    }
+                    WriteOp::Deletion => db_batch.delete_cf(cf_handle, key),
                 }
             }
         }
@@ -376,13 +374,13 @@ impl DB {
             default_write_options()
         };
         self.inner
-            .write_opt(&db_batch, &write_options)
+            .write_opt(db_batch, &write_options)
             .map_err(convert_rocksdb_err)?;
 
         Ok(())
     }
 
-    fn get_cf_handle(&self, cf_name: &str) -> Result<&rocksdb::CFHandle> {
+    fn get_cf_handle(&self, cf_name: &str) -> Result<&rocksdb::ColumnFamily> {
         self.inner.cf_handle(cf_name).ok_or_else(|| {
             format_err!(
                 "DB::cf_handle not found for column family name: {}",
@@ -394,10 +392,12 @@ impl DB {
     /// Flushes all memtable data. This is only used for testing
     /// `get_approximate_sizes_cf` in unit tests.
     pub fn flush_all(&self, sync: bool) -> Result<()> {
-        for cf_name in &self.inner.cf_names() {
+        for cf_name in &self.cf_names {
             let cf_handle = self.get_cf_handle(cf_name)?;
+            let mut flush_options = FlushOptions::default();
+            flush_options.set_wait(sync);
             self.inner
-                .flush_cf(cf_handle, sync)
+                .flush_cf_opt(cf_handle, &flush_options)
                 .map_err(convert_rocksdb_err)?;
         }
         Ok(())
@@ -407,7 +407,9 @@ impl DB {
         &self, cf_name: &str, property_name: &str,
     ) -> Result<u64> {
         self.inner
-            .get_property_int_cf(self.get_cf_handle(&cf_name)?, property_name)
+            .property_int_value_cf(self.get_cf_handle(&cf_name)?, property_name)
+            .ok()
+            .flatten()
             .ok_or_else(|| {
                 format_err!(
                     "Unable to get property \"{}\" of  column family \"{}\".",

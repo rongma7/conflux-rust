@@ -547,7 +547,7 @@ mod usable_size {
                 HeapSize(heap, 0, ptr) as usize
             }
 
-        } else if #[cfg(feature = "jemalloc")] {
+        } else if #[cfg(feature = "jemalloc-global")] {
 
             /// Use of jemalloc usable size C function through jemallocator crate call.
             pub unsafe extern "C" fn malloc_usable_size(ptr: *const c_void) -> usize {

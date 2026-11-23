@@ -43,18 +43,41 @@ impl GlobalStat {
     }
 
     /// Get loaded global statistic variables from the database.
+    ///
+    /// Uses a batched read to fetch all params in a single storage lock
+    /// acquisition on backends that support it (LVMT). The MPT backend
+    /// falls back to sequential point reads, which is the same work as
+    /// the per-key path below.
     pub fn loaded(db: &StateDb) -> DbResult<Self> {
-        let mut ans = Default::default();
-        fn load_value<T: GlobalParamKey>(
-            ans: &mut [U256; TOTAL_GLOBAL_PARAMS], db: &StateDb,
-        ) -> DbResult<()> {
-            let loaded = db.get_global_param::<T>()?;
-            ans[T::ID] = T::into_vm_value(loaded);
-            Ok(())
-        }
         use global_params::*;
+        use primitives::StorageKeyWithSpace;
+
+        let mut keys: Vec<StorageKeyWithSpace<'static>> = Vec::new();
+        let mut ids: Vec<usize> = Vec::new();
+        let mut into_vm_fns: Vec<fn(U256) -> U256> = Vec::new();
+
+        fn collect_key<T: GlobalParamKey>(
+            keys: &mut Vec<StorageKeyWithSpace<'static>>, ids: &mut Vec<usize>,
+            into_vm_fns: &mut Vec<fn(U256) -> U256>,
+        ) {
+            keys.push(T::STORAGE_KEY);
+            ids.push(T::ID);
+            into_vm_fns.push(T::into_vm_value);
+        }
+
         for_all_global_param_keys! {
-            load_value::<Key>(&mut ans, db)?;
+            collect_key::<Key>(&mut keys, &mut ids, &mut into_vm_fns);
+        }
+
+        let raw_values = db.get_raw_batch(&keys)?;
+
+        let mut ans = <[U256; TOTAL_GLOBAL_PARAMS]>::default();
+        for (i, raw) in raw_values.into_iter().enumerate() {
+            let loaded: U256 = match raw {
+                Some(bytes) => ::rlp::decode::<U256>(&bytes)?,
+                None => U256::zero(),
+            };
+            ans[ids[i]] = (into_vm_fns[i])(loaded);
         }
         Ok(GlobalStat(ans))
     }

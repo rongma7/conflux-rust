@@ -434,6 +434,12 @@ build_config! {
 
         // This is designed for fast node catch-up but has not been thoroughly tested. Do not use it in production environments.
         (backup_mpt_snapshot, (bool), true)
+
+        // When true, the node runs on the LVMT backend (a flat verkle tree
+        // with its own pending/historical RocksDB pair) instead of the
+        // layered MPT. The two backends cannot share a data directory.
+        (use_lvmt_storage, (bool), false)
+        (lvmt_proof_pool_threads, (usize), cfx_storage::defaults::DEFAULT_LVMT_PROOF_POOL_THREADS)
     }
     {
         // Development related section.
@@ -881,6 +887,8 @@ impl Configuration {
                 .recovery_latest_mpt_snapshot,
             keep_era_genesis_snapshot: self.raw_conf.keep_era_genesis_snapshot,
             backup_mpt_snapshot: self.raw_conf.backup_mpt_snapshot,
+            use_lvmt_storage: self.raw_conf.use_lvmt_storage,
+            lvmt_proof_pool_threads: self.raw_conf.lvmt_proof_pool_threads,
         }
     }
 

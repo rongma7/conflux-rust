@@ -2,9 +2,10 @@
 // Conflux is free software and distributed under GNU General Public License.
 // See http://www.gnu.org/licenses/
 
-// StateManager is the single entry-point to access State for any epoch.
-// StateManager manages internal mutability and is thread-safe.
-pub use super::impls::state_manager::StateManager;
+// The MPT engine lives at `super::impls::state_manager::StateManager` and is
+// reached through the `StorageManager` wrapper in `storage_manager_entry`;
+// this file holds the public surface (the trait, `OpenOptions`, versions,
+// recovery/confirmed views, `StateIndex`).
 
 /// Which version of the state is opened, or committed against. `Empty` is the
 /// empty base: the state before any epoch exists. It is a concept of its own,

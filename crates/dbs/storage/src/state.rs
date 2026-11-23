@@ -26,6 +26,16 @@ pub trait StorageView: Sync + Send {
     fn iter_prefix(
         &self, access_key_prefix: StorageKeyWithSpace,
     ) -> Result<Box<dyn Iterator<Item = MptKeyValue>>>;
+
+    /// Reads several keys as a batch. The default implementation falls back
+    /// to sequential `get` calls; backends whose point read acquires a
+    /// shared lock (notably the LVMT backend) override this to amortize
+    /// the lock acquisition over the whole batch.
+    fn get_batch(
+        &self, keys: &[StorageKeyWithSpace],
+    ) -> Result<Vec<Option<Box<[u8]>>>> {
+        keys.iter().map(|k| self.get(*k)).collect()
+    }
 }
 
 /// The whole write set of one epoch, `None` deletes the key.

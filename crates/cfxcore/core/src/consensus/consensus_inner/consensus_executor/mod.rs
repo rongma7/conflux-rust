@@ -867,6 +867,7 @@ impl ConsensusExecutionHandler {
                 Some(
                     ThreadPoolBuilder::new()
                         .num_threads(DEFAULT_EXECUTION_PREFETCH_THREADS)
+                        .thread_name(|i| format!("exec-prefetch-{}", i))
                         .build()
                         .unwrap(),
                 )

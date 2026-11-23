@@ -9,13 +9,13 @@
 // TODO: could provide a shortcut proof with snapshot_proof
 // TODO: at intermediate_epoch_id with delta_proof.
 #[derive(Clone, Debug, Default, PartialEq, RlpEncodable, RlpDecodable)]
-pub struct StateProof {
+pub struct MptStateProof {
     pub delta_proof: Option<TrieProof>,
     pub intermediate_proof: Option<TrieProof>,
     pub snapshot_proof: Option<TrieProof>,
 }
 
-impl StateProof {
+impl MptStateProof {
     pub fn with_delta(
         &mut self, maybe_delta_proof: Option<TrieProof>,
     ) -> &mut Self {
@@ -136,6 +136,128 @@ impl StateProof {
     }
 }
 
+const TAG_MPT: u8 = 0;
+const TAG_LVMT: u8 = 1;
+
+/// Dispatched proof: MPT's three-tier Merkle-Patricia proof, or LVMT's
+/// AMT+MMR proof (carried as bytes; decode with `LvmtProof::from_bytes`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum StateProof {
+    Mpt(MptStateProof),
+    Lvmt(Vec<u8>),
+}
+
+impl Default for StateProof {
+    fn default() -> Self { Self::Mpt(MptStateProof::default()) }
+}
+
+impl StateProof {
+    /// MPT-only. Panics on LVMT.
+    pub fn with_delta(
+        &mut self, maybe_delta_proof: Option<TrieProof>,
+    ) -> &mut Self {
+        match self {
+            Self::Mpt(p) => {
+                p.with_delta(maybe_delta_proof);
+                self
+            }
+            Self::Lvmt(_) => {
+                panic!("StateProof::with_delta on an LVMT variant")
+            }
+        }
+    }
+
+    /// MPT-only. Panics on LVMT.
+    pub fn with_intermediate(
+        &mut self, maybe_intermediate_proof: Option<TrieProof>,
+    ) -> &mut Self {
+        match self {
+            Self::Mpt(p) => {
+                p.with_intermediate(maybe_intermediate_proof);
+                self
+            }
+            Self::Lvmt(_) => {
+                panic!("StateProof::with_intermediate on an LVMT variant")
+            }
+        }
+    }
+
+    /// MPT-only. Panics on LVMT.
+    pub fn with_snapshot(
+        &mut self, maybe_snapshot_proof: Option<TrieProof>,
+    ) -> &mut Self {
+        match self {
+            Self::Mpt(p) => {
+                p.with_snapshot(maybe_snapshot_proof);
+                self
+            }
+            Self::Lvmt(_) => {
+                panic!("StateProof::with_snapshot on an LVMT variant")
+            }
+        }
+    }
+
+    pub fn is_valid_kv(
+        &self, key: &Vec<u8>, value: Option<&[u8]>, root: StateRoot,
+        maybe_intermediate_padding: Option<DeltaMptKeyPadding>,
+    ) -> bool {
+        match self {
+            Self::Mpt(p) => {
+                p.is_valid_kv(key, value, root, maybe_intermediate_padding)
+            }
+            Self::Lvmt(bytes) => {
+                // LVMT puts its single H256 state root into `delta_root`
+                // via `StateRoot::genesis(..)`, so that's what verify checks.
+                // The storage crate uses ethereum-types 0.16; the storage2
+                // crate below uses 0.9. The two are isolated behind this
+                // byte-wise crossover and never meet directly.
+                let state_root =
+                    storage2::H256::from_slice(root.delta_root.as_bytes());
+                match storage2::verify_lvmt(&state_root, key, bytes) {
+                    Ok(Some(proven_value)) => {
+                        value.map(|v| v == &*proven_value).unwrap_or(false)
+                    }
+                    Ok(None) => value.is_none(),
+                    Err(e) => {
+                        warn!("LVMT proof check failed: {:?}", e);
+                        false
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Encodable for StateProof {
+    fn rlp_append(&self, s: &mut RlpStream) {
+        s.begin_list(2);
+        match self {
+            Self::Mpt(p) => {
+                s.append(&TAG_MPT);
+                s.append(p);
+            }
+            Self::Lvmt(bytes) => {
+                s.append(&TAG_LVMT);
+                s.append(bytes);
+            }
+        }
+    }
+}
+
+impl Decodable for StateProof {
+    fn decode(rlp: &Rlp) -> std::result::Result<Self, DecoderError> {
+        if rlp.item_count()? != 2 {
+            return Err(DecoderError::RlpIncorrectListLen);
+        }
+        let tag: u8 = rlp.val_at(0)?;
+        match tag {
+            TAG_MPT => Ok(Self::Mpt(rlp.val_at(1)?)),
+            TAG_LVMT => Ok(Self::Lvmt(rlp.val_at(1)?)),
+            _ => Err(DecoderError::Custom("unknown StateProof variant tag")),
+        }
+    }
+}
+
 use crate::{
     delta_mpt_key::{
         delta_mpt_padding, to_delta_mpt_key_bytes, DeltaMptKeyPadding,
@@ -143,4 +265,5 @@ use crate::{
     impls::merkle_patricia_trie::TrieProof,
 };
 use primitives::{MptValue, StateRoot, StorageKeyWithSpace, MERKLE_NULL_NODE};
+use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
 use rlp_derive::{RlpDecodable, RlpEncodable};

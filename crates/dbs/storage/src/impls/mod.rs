@@ -5,8 +5,10 @@
 #[macro_use]
 pub(super) mod merkle_patricia_trie;
 pub(super) mod delta_mpt;
+pub mod lvmt_engine;
 pub(super) mod node_merkle_proof;
 pub(super) mod proof_merger;
+pub mod proof_rpc_pool;
 pub(super) mod recording_storage;
 pub(super) mod single_mpt_state;
 pub(super) mod snapshot_sync;
@@ -46,6 +48,10 @@ pub mod defaults {
     /// MPT, so setting this to 4 allows to access two states at the same
     /// time.
     pub const DEFAULT_MAX_OPEN_MPT: u32 = 4;
+
+    /// Number of single-threaded rayon pools the LVMT proof RPC pool builds;
+    /// also the in-flight proof request cap.
+    pub const DEFAULT_LVMT_PROOF_POOL_THREADS: usize = 8;
 
     use super::delta_mpt::node_memory_manager::DeltaMptsNodeMemoryManager;
 }

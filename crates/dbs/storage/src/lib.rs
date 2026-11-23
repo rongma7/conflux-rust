@@ -19,6 +19,7 @@ mod delta_mpt_key;
 pub(self) mod snapshot_manager;
 mod state;
 mod state_manager;
+mod storage_manager_entry;
 #[macro_use]
 pub(crate) mod storage_db;
 
@@ -132,6 +133,12 @@ pub struct StorageConfiguration {
     pub recovery_latest_mpt_snapshot: bool,
     pub keep_era_genesis_snapshot: bool,
     pub backup_mpt_snapshot: bool,
+    /// When set, the node runs on the LVMT backend instead of the layered
+    /// MPT one. The two backends never coexist in one data directory.
+    pub use_lvmt_storage: bool,
+    /// Number of single-threaded rayon pools (= in-flight proof cap) the
+    /// LVMT backend builds for proof RPC. See `ProofRpcPool`.
+    pub lvmt_proof_pool_threads: usize,
 }
 
 impl StorageConfiguration {
@@ -182,6 +189,8 @@ impl StorageConfiguration {
             recovery_latest_mpt_snapshot: false,
             keep_era_genesis_snapshot: false,
             backup_mpt_snapshot: true,
+            use_lvmt_storage: false,
+            lvmt_proof_pool_threads: defaults::DEFAULT_LVMT_PROOF_POOL_THREADS,
         }
     }
 
@@ -220,7 +229,8 @@ pub use self::impls::defaults;
 pub use self::impls::{
     merkle_patricia_trie::{trie_proof::TrieProofNode, TrieProof},
     node_merkle_proof::{NodeMerkleProof, StorageRootProof},
-    state_proof::StateProof,
+    proof_rpc_pool::ProofRpcPool,
+    state_proof::{MptStateProof, StateProof},
 };
 
 // The simple_mpt algorithm family, used outside the state engine.
@@ -234,8 +244,8 @@ pub use self::{
         storage_db::snapshot_db_manager_sqlite::SnapshotDbManagerSqlite,
     },
     state::State as StorageState,
-    state_manager::StateManager as StorageManager,
     storage_db::{SnapshotInfo, SnapshotKeptToProvideSyncStatus},
+    storage_manager_entry::StorageManager,
 };
 
 // The delta MPT key prefix type and its derivation, recomputed by the light

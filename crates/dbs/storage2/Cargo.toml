@@ -1,0 +1,25 @@
+[package]
+description = "LVMT backend wrapper, isolated from the host project's ethereum-types version."
+homepage = "https://www.confluxnetwork.org"
+license = "GPL-3.0"
+name = "storage2"
+version = "1.0.0"
+edition = "2021"
+
+# Everything the wrapper's public API touches is kept inside cfx-storage2's
+# own type world (ethereum-types 0.9, via primitive-types 0.7). The host
+# project uses ethereum-types 0.16, and the storage crate on the other side
+# does the [u8; 32] hop when it calls into us.
+[dependencies]
+cfx-storage2 = { git = "https://github.com/Conflux-Chain/cfx-storage2.git", rev = "2df7915" }
+# Pinned to the version cfx-storage2 uses, so the H256 we hand its API is the
+# same H256 it returns. The upper storage crate handles its own H256 at a
+# different version and only crosses with [u8; 32].
+ethereum-types = "0.9"
+amt = { git = "https://github.com/Conflux-Chain/amt", rev = "e250a64", features = ["bls12-381"] }
+ark-bls12-381 = "0.5"
+kvdb-rocksdb = { git = "https://github.com/Conflux-Chain/parity-common-rocksdb", rev = "06474591390e06580d2973f4dd45c19f98eab9d8", version = "0.17.0-iter-nochecksum-partitionedindexfilter" }
+parking_lot = { workspace = true }
+once_cell = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
