@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 import sys, os
+
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # CatchUpCheckpointPhase relies on MPT snapshot sync, which is not yet
+    # implemented for LVMT; LVMT snapshot sync is tracked as a separate gate.
+    print("Skipping p2p_era_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 from eth_utils import decode_hex
 from rlp.sedes import Binary, BigEndianInt
 

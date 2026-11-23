@@ -5,6 +5,11 @@ import time
 import random
 sys.path.insert(1, os.path.dirname(sys.path[0]))
 
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # MPT snapshot catch-up sync does not apply under LVMT.
+    print("Skipping sync_checkpoint_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 from test_framework.test_framework import ConfluxTestFramework
 from test_framework.simple_rpc_proxy import ReceivedErrorResponseError
 from test_framework.util import sync_blocks, connect_nodes, connect_sample_nodes, assert_equal, assert_blocks_valid, \

@@ -391,17 +391,22 @@ class LightRPCTest(ConfluxTestFramework):
 
         # --------------------------
 
-        self.log.info(f"Checking cfx_getStorageRoot...")
+        if os.environ.get("USE_LVMT_STORAGE", "").lower() not in ("1", "true", "yes"):
+            self.log.info(f"Checking cfx_getStorageRoot...")
 
-        full = self.rpc[FULLNODE0].get_storage_root(self.user, latest_state)
-        light = self.rpc[LIGHTNODE].get_storage_root(self.user, latest_state)
-        assert_equal(light, full)
+            full = self.rpc[FULLNODE0].get_storage_root(self.user, latest_state)
+            light = self.rpc[LIGHTNODE].get_storage_root(self.user, latest_state)
+            assert_equal(light, full)
 
-        full = self.rpc[FULLNODE0].get_storage_root(self.contract, latest_state)
-        light = self.rpc[LIGHTNODE].get_storage_root(self.contract, latest_state)
-        assert_equal(light, full)
+            full = self.rpc[FULLNODE0].get_storage_root(self.contract, latest_state)
+            light = self.rpc[LIGHTNODE].get_storage_root(self.contract, latest_state)
+            assert_equal(light, full)
 
-        self.log.info(f"Pass -- cfx_getStorageRoot")
+            self.log.info(f"Pass -- cfx_getStorageRoot")
+        else:
+            # cfx_getStorageRoot answers per MPT layer, which LVMT does not
+            # produce by design; see storage2-getStorageRoot-closed-2026-11-19.md.
+            self.log.info(f"Skipping cfx_getStorageRoot under USE_LVMT_STORAGE")
 
         # --------------------------
 

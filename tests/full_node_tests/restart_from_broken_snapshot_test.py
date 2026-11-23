@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+import os
+import sys
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # MPT snapshot recovery handshake does not apply under LVMT.
+    print("Skipping restart_from_broken_snapshot_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 """Restart from a broken snapshot. What is asserted:
 
 * `plan_recovery` must re-anchor the recomputation start to

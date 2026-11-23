@@ -3,6 +3,11 @@ import os
 import re
 import shutil
 import sys
+
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # MPT snapshot sync before stable checkpoint does not apply under LVMT.
+    print("Skipping sync_checkpoint_snapshot_before_stable_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
 import time
 import random
 

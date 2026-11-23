@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
 import os
+import sys
+
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # Hardcoded MPT null-node hash and layered-root assertions do not apply under LVMT.
+    print("Skipping storage_root_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 import eth_utils
 
 from conflux.config import default_config

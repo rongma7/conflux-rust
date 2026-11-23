@@ -15,6 +15,12 @@ disagreement between the formula and the node, not an expected value that was
 read off a run.
 """
 import os
+import sys
+
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # Three-layer shift is an MPT-specific concept; LVMT keeps a single flat store.
+    print("Skipping storage_shift_boundary_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
 
 import eth_utils
 

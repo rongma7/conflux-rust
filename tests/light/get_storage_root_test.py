@@ -5,6 +5,11 @@
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # Light-node state proof RPC is not wired for LVMT yet.
+    print("Skipping light/get_storage_root_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 import eth_utils
 
 from conflux.config import default_config

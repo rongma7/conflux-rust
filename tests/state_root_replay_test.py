@@ -54,6 +54,11 @@ import os
 import shutil
 import sys
 
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # LVMT computes a different state root from MPT; the golden file is MPT-specific.
+    print("Skipping state_root_replay_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 import eth_utils
 import rlp
 

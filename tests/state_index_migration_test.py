@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+import os
+import sys
+if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
+    # Delta-MPT state index rebuild does not apply under LVMT.
+    print("Skipping state_index_migration_test under USE_LVMT_STORAGE", flush=True)
+    sys.exit(0)
+
 """Rebuild the engine's state index on a garbage collected disk and check
 that every height the rebuild claims is still openable answers the same as an
 archive node which never collected anything.
