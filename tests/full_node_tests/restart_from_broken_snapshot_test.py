@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-import os
-import sys
-if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
-    # MPT snapshot recovery handshake does not apply under LVMT.
-    print("Skipping restart_from_broken_snapshot_test under USE_LVMT_STORAGE", flush=True)
-    sys.exit(0)
+"""Restart after an abrupt kill.
 
-"""Restart from a broken snapshot. What is asserted:
+Under MPT the test additionally removes the newest key value snapshot
+directory before the restart, simulating a crash that lost the data of the
+newest snapshot while its snapshot info row survived, and asserts:
 
 * `plan_recovery` must re-anchor the recomputation start to
   `era_pivot_epoch_height + 2 * snapshot_epoch_count`, the same landing point
@@ -17,11 +14,20 @@ if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "
   must be cleared exactly at the end of the replay window;
 * no transaction may be executed while the handshake runs.
 
-Every non trivial branch of this path is behind `use_isolated_db_for_mpt_table`,
-which is off by default, so the configuration below turns it on. With it off
-`recover_latest_mpt_snapshot_if_needed` returns on its first statement and the
-recovery flag is constantly false, which is the branch every existing crash and
-reboot test happens to exercise.
+Under LVMT there is no three-tier snapshot concept and no per-snapshot
+directory to delete, so the broken-snapshot step is skipped. The restart
+still exercises cfx-storage2's pending-part recovery: on open,
+`LvmtStorage::new` repairs the pending database (rolling back incomplete
+`change_root` transactions when needed, or falling back to a clean
+bootstrap of the pending part). The MPT-only handshake assertions
+(`plan_recovery` re-anchor, per commit recovery flag) do not apply, but
+the generic no-tx-during-handshake assertion still does. The end to end
+check that the replayed states agree with an archive node runs under both
+backends.
+
+Every non trivial branch of the MPT path is behind `use_isolated_db_for_mpt_table`,
+which is off by default, so the configuration below turns it on. Under LVMT
+that flag is simply ignored.
 """
 
 import os
@@ -35,6 +41,9 @@ sys.path.insert(1, os.path.dirname(sys.path[0]))
 from test_framework.test_framework import ConfluxTestFramework
 from test_framework.util import sync_blocks, connect_sample_nodes, assert_equal
 from conflux.rpc import RpcClient
+
+
+USE_LVMT = os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes")
 
 
 SNAPSHOT_EPOCH_COUNT = 100
@@ -93,6 +102,9 @@ PERSIST_STATE_RE = re.compile(
 )
 HANDSHAKE_START_RE = re.compile(r"construct_pivot_state: start=")
 PROCESS_TX_RE = re.compile(r"Process tx epoch_id=")
+LVMT_OPEN_RE = re.compile(
+    r"LVMT storage engine opened \(pending_db preexisting = (\w+)\)"
+)
 
 
 class RestartFromBrokenSnapshotTest(ConfluxTestFramework):
@@ -110,7 +122,8 @@ class RestartFromBrokenSnapshotTest(ConfluxTestFramework):
             # Disable pos reference because pow blocks are generated too fast.
             "pos_reference_enable_height": "10000",
             "cip1559_transition_height": "10000",
-            # Without this the whole recovery path is short circuited.
+            # Without this the whole MPT recovery path is short circuited.
+            # Ignored by LVMT.
             "use_isolated_db_for_mpt_table": "true",
             "use_isolated_db_for_mpt_table_height": str(
                 MPT_TABLE_ISOLATION_HEIGHT
@@ -122,7 +135,9 @@ class RestartFromBrokenSnapshotTest(ConfluxTestFramework):
             # Consensus policy, applied before the handshake: it pins the
             # proposed recomputation start below the newest snapshot, which is
             # the condition under which the engine has to rebuild the latest
-            # MPT snapshot.
+            # MPT snapshot. Under LVMT it still lowers the proposed start to
+            # 950, so the replay window exercised by this test is roughly the
+            # same height range.
             "force_recompute_height_during_construct_pivot": str(
                 FORCE_RECOMPUTE_HEIGHT
             ),
@@ -194,49 +209,55 @@ class RestartFromBrokenSnapshotTest(ConfluxTestFramework):
         self.log.info("all nodes synced, tip height %d", tip_height)
         assert_equal(client1.epoch_number(), tip_height)
 
-        snapshot_heights = self._snapshot_heights_on_disk(
-            node_index, client0, tip_height
-        )
-        self.log.info("snapshots on disk before the crash: %s", snapshot_heights)
-        # The scenario needs the snapshot which carries `max_height_has_mpt` to
-        # be on disk, and it needs it to be lower than the newest one, or the
-        # handshake takes the "still not use mpt database" early return.
-        assert (
-            MAX_HEIGHT_HAS_MPT in snapshot_heights
-        ), "snapshot at the mpt table isolation boundary is missing"
-        assert (
-            max(snapshot_heights) > MAX_HEIGHT_HAS_MPT
-        ), "no snapshot above the mpt table isolation boundary"
+        snapshot_heights = None
+        if not USE_LVMT:
+            # MPT only: the scenario needs the snapshot which carries
+            # `max_height_has_mpt` to be on disk, and it needs it to be lower
+            # than the newest one, or the handshake takes the "still not use
+            # mpt database" early return.
+            snapshot_heights = self._snapshot_heights_on_disk(
+                node_index, client0, tip_height
+            )
+            self.log.info(
+                "snapshots on disk before the crash: %s", snapshot_heights
+            )
+            assert (
+                MAX_HEIGHT_HAS_MPT in snapshot_heights
+            ), "snapshot at the mpt table isolation boundary is missing"
+            assert (
+                max(snapshot_heights) > MAX_HEIGHT_HAS_MPT
+            ), "no snapshot above the mpt table isolation boundary"
 
         log_path = os.path.join(self.nodes[node_index].datadir, "conflux.log")
 
-        # The broken snapshot is made in two steps, both of which a real crash
-        # can produce:
+        # The crash is made in two steps for MPT and one step for LVMT:
         #   1. the node is killed with SIGKILL, so nothing gets a chance to be
-        #      shut down in order;
-        #   2. the newest key value snapshot directory is removed while its
-        #      snapshot info row survives. That is the shape `scan_persist_state`
-        #      calls a missing snapshot: the newest snapshot's data did not
-        #      survive the crash, its registration did. On the way back up the
-        #      engine drops the row and destroys the matching delta database, so
-        #      the newest snapshot and every state above it are gone.
+        #      shut down in order (both backends);
+        #   2. (MPT only) the newest key value snapshot directory is removed
+        #      while its snapshot info row survives. That is the shape
+        #      `scan_persist_state` calls a missing snapshot: the newest
+        #      snapshot's data did not survive the crash, its registration
+        #      did. On the way back up the engine drops the row and destroys
+        #      the matching delta database, so the newest snapshot and every
+        #      state above it are gone.
         self.stop_node(node_index, kill=True)
         self.nodes[node_index].wait_until_stopped()
         log_offset = os.path.getsize(log_path)
 
-        newest_snapshot_height = max(snapshot_heights)
-        newest_snapshot_hash = client0.block_by_epoch(
-            hex(newest_snapshot_height)
-        )["hash"]
-        newest_snapshot_path = os.path.join(
-            self._snapshot_dir(node_index), "sqlite_" + newest_snapshot_hash[2:]
-        )
-        self.log.info(
-            "removing the newest snapshot at height %d: %s",
-            newest_snapshot_height,
-            newest_snapshot_path,
-        )
-        shutil.rmtree(newest_snapshot_path)
+        if not USE_LVMT:
+            newest_snapshot_height = max(snapshot_heights)
+            newest_snapshot_hash = client0.block_by_epoch(
+                hex(newest_snapshot_height)
+            )["hash"]
+            newest_snapshot_path = os.path.join(
+                self._snapshot_dir(node_index), "sqlite_" + newest_snapshot_hash[2:]
+            )
+            self.log.info(
+                "removing the newest snapshot at height %d: %s",
+                newest_snapshot_height,
+                newest_snapshot_path,
+            )
+            shutil.rmtree(newest_snapshot_path)
 
         self.start_node(node_index, phase_to_wait=None)
         self.nodes[node_index].wait_for_phase(["NormalSyncPhase"], wait_time=240)
@@ -245,9 +266,20 @@ class RestartFromBrokenSnapshotTest(ConfluxTestFramework):
         lines = self._read_new_log(node_index, log_offset)
         self.log.info("read %d log lines from the restart", len(lines))
 
-        self._check_handshake_inputs(lines)
-        replay = self._check_recompute_start(lines)
-        self._check_recovery_flags(lines, replay)
+        if USE_LVMT:
+            # cfx-storage2 opened the pending database on restart; the host
+            # engine logs that line exactly once, and the preexisting flag
+            # must be `true` because the kill left a populated pending db
+            # behind.
+            self._check_lvmt_recovery_hook(lines)
+        else:
+            # MPT-only handshake assertions.
+            self._check_handshake_inputs(lines)
+            replay = self._check_recompute_start(lines)
+            self._check_recovery_flags(lines, replay)
+        # The no-tx-during-handshake assertion is generic: construct_pivot_state
+        # does not execute transactions while plan_recovery runs under either
+        # backend.
         self._check_no_execution_during_handshake(lines)
 
         # End to end: the replayed states have to agree with the archive node.
@@ -255,12 +287,22 @@ class RestartFromBrokenSnapshotTest(ConfluxTestFramework):
         assert_equal(client1.epoch_number(), client0.epoch_number())
         # `EXPECTED_RECOMPUTE_START` is a height, and `block_hashes[i]` is the
         # block of epoch i + 1, so that height sits at index
-        # `EXPECTED_RECOMPUTE_START - 1`.
+        # `EXPECTED_RECOMPUTE_START - 1`. Under LVMT the replay window starts
+        # at the proposed height instead (plan_recovery does not lower it),
+        # but 699 still sits well below it, so the loop below covers every
+        # block that was actually recomputed and then some.
         for block_hash in block_hashes[EXPECTED_RECOMPUTE_START - 1:-8]:
             executed1 = self.nodes[node_index].test_getExecutedInfo(block_hash)
             executed0 = self.nodes[0].test_getExecutedInfo(block_hash)
             assert_equal(executed1, executed0)
         self.log.info("executed info matches the archive node")
+
+    def _check_lvmt_recovery_hook(self, lines):
+        """cfx-storage2's recovery runs inside the LVMT engine's open path."""
+        hooks = [LVMT_OPEN_RE.search(line) for line in lines]
+        hooks = [m for m in hooks if m is not None]
+        assert len(hooks) >= 1, "LVMT engine did not log its open line"
+        assert_equal(hooks[0].group(1), "true")
 
     def _check_handshake_inputs(self, lines):
         """The inputs the startup self check handed to the handshake.

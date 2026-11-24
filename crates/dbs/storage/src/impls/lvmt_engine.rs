@@ -81,8 +81,17 @@ impl LvmtStorageEngine {
     pub fn new(conf: StorageConfiguration) -> Result<Self> {
         let historical = conf.path_storage_dir.join("lvmt_historical");
         let pending = conf.path_storage_dir.join("lvmt_pending");
+        // cfx-storage2's `LvmtStorage::new` is the recovery hook: on open it
+        // runs pending-part recovery when the pending database is non-empty
+        // and falls back to a clean bootstrap on failure. Hosting it here is
+        // all the host side has to do for LVMT shutdown recovery.
+        let had_pending = pending.exists();
         let manager = storage2::LvmtStateManager::new_arc(historical, pending)
             .map_err(backend_to_storage_err)?;
+        info!(
+            "LVMT storage engine opened (pending_db preexisting = {})",
+            had_pending
+        );
         let proof_rpc_pool =
             Arc::new(ProofRpcPool::new(conf.lvmt_proof_pool_threads)?);
         Ok(Self {
