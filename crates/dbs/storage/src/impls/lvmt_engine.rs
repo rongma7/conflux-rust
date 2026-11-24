@@ -17,7 +17,7 @@ use crate::{
     state::{Changeset, CommitMeta, StorageView},
     state_manager::{
         ConsensusRecoveryView, OpenOptions, RecoveryPlan, StateConfirmedView,
-        StateIndex, StorageEngine, StorageVersion,
+        StorageEngine, StorageVersion,
     },
     MptKeyValue, StorageConfiguration,
 };
@@ -61,11 +61,9 @@ impl StorageView for LvmtStorageView {
 }
 
 /// The LVMT state engine. Holds the backend handle (shared with every
-/// `LvmtStorageView` it has handed out) plus the storage configuration the
-/// node booted with.
+/// `LvmtStorageView` it has handed out).
 pub struct LvmtStorageEngine {
     manager: Arc<storage2::LvmtStateManager>,
-    conf: StorageConfiguration,
     /// Function-level lock that serializes `notify_state_confirmed` so its
     /// read-compute-write dance against the backend and the openable lower
     /// bound cannot interleave across callers. The unit payload is
@@ -96,7 +94,6 @@ impl LvmtStorageEngine {
             Arc::new(ProofRpcPool::new(conf.lvmt_proof_pool_threads)?);
         Ok(Self {
             manager,
-            conf,
             maintenance_lock: Mutex::new(()),
             proof_rpc_pool,
         })
@@ -263,59 +260,45 @@ impl StorageEngine for LvmtStorageEngine {
         // storage locks when it enters here.
         let _guard = self.maintenance_lock.lock();
         let confirmed_height = view.confirmed_height();
-        let snapshot_epoch_count =
-            self.conf.consensus_param.snapshot_epoch_count;
-        let additional_gap = (self.conf.additional_maintained_snapshot_count
-            * snapshot_epoch_count) as u64;
-        let maintained_state_height_lower_bound =
-            confirmed_height.saturating_sub(additional_gap);
 
-        let pivot_hash = match view
-            .pivot_hash_at_height(maintained_state_height_lower_bound)
-        {
+        // The pending part has to cover `(confirmed_height, pivot_tip]`:
+        // consensus can still reorg there, mining's blame / deferred-state
+        // preflight can replay non-pivot forks there, and RPC reads pivot
+        // epoch state out of it. Everything at or below `confirmed_height`
+        // is single-chain finalized data — the right shape for historical.
+        // So `make_pivot` and the pending-to-historical migration both
+        // pivot on the same height and the same commit.
+        let pivot_hash = match view.pivot_hash_at_height(confirmed_height) {
             Ok(hash) => hash,
             Err(msg) => {
                 warn!(
                     "LVMT notify_state_confirmed({}): pivot lookup failed: {}; maintenance failed",
-                    maintained_state_height_lower_bound, msg
+                    confirmed_height, msg
                 );
                 return 0;
             }
         };
         let pivot_s2 = epoch_to_s2(&pivot_hash);
 
-        let confirmed_intermediate_height = maintained_state_height_lower_bound
-            - StateIndex::height_to_delta_height(
-                maintained_state_height_lower_bound,
-                snapshot_epoch_count,
-            ) as u64;
-        let confirmed_snapshot_height = confirmed_intermediate_height
-            .saturating_sub(snapshot_epoch_count as u64);
-        let first_available_state_height = if confirmed_snapshot_height > 0 {
-            confirmed_snapshot_height + 1
-        } else {
-            0
-        };
-
         let non_pivot_removed = match self.manager.make_pivot(pivot_s2) {
             Ok(b) => b,
             Err(e) => {
                 warn!(
                     "LVMT notify_state_confirmed({}): make_pivot failed: {:?}; maintenance failed",
-                    maintained_state_height_lower_bound, e
+                    confirmed_height, e
                 );
                 return 0;
             }
         };
         let adjust_pending_root = match self
             .manager
-            .is_newer_than_pending_root(first_available_state_height)
+            .is_newer_than_pending_root(confirmed_height)
         {
             Ok(b) => b,
             Err(e) => {
                 warn!(
                     "LVMT notify_state_confirmed({}): is_newer_than_pending_root failed: {:?}; maintenance failed",
-                    first_available_state_height, e
+                    confirmed_height, e
                 );
                 return 0;
             }
@@ -323,7 +306,7 @@ impl StorageEngine for LvmtStorageEngine {
 
         if non_pivot_removed || adjust_pending_root {
             let migrate = if adjust_pending_root {
-                Some((first_available_state_height, pivot_s2))
+                Some((confirmed_height, pivot_s2))
             } else {
                 None
             };
@@ -332,17 +315,23 @@ impl StorageEngine for LvmtStorageEngine {
                 Err(e) => {
                     warn!(
                         "LVMT notify_state_confirmed({}): maintenance_deferred failed: {:?}; maintenance failed",
-                        first_available_state_height, e
+                        confirmed_height, e
                     );
                     return 0;
                 }
             }
         }
 
+        // "RPC lowest readable state height." Advancing this needs a
+        // historical GC path cfx-storage2 does not yet expose, so stay at
+        // 0 (archive behaviour): everything in historical is readable and
+        // nothing is reclaimed on disk. When the GC API lands, return the
+        // floor it reports.
+        let first_available_state_height = 0u64;
         info!(
             "LVMT notify_state_confirmed: confirmed_height {} \
-             first_available_state_height {}",
-            confirmed_height, first_available_state_height,
+             pending_new_root_height {} first_available_state_height {}",
+            confirmed_height, confirmed_height, first_available_state_height,
         );
         first_available_state_height
     }
