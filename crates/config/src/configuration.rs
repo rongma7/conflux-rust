@@ -440,6 +440,11 @@ build_config! {
         // layered MPT. The two backends cannot share a data directory.
         (use_lvmt_storage, (bool), false)
         (lvmt_proof_pool_threads, (usize), cfx_storage::defaults::DEFAULT_LVMT_PROOF_POOL_THREADS)
+        // When unset, the LVMT backend keeps `additional_maintained_snapshot_count ×
+        // snapshot_epoch_count` commits of pending non-pivot branches reachable
+        // so mining preflight can replay fork state, matching the MPT engine's
+        // retention window. Set explicitly to override.
+        (lvmt_pending_retention_commits, (Option<u64>), None)
     }
     {
         // Development related section.
@@ -889,6 +894,9 @@ impl Configuration {
             backup_mpt_snapshot: self.raw_conf.backup_mpt_snapshot,
             use_lvmt_storage: self.raw_conf.use_lvmt_storage,
             lvmt_proof_pool_threads: self.raw_conf.lvmt_proof_pool_threads,
+            lvmt_pending_retention_commits: self
+                .raw_conf
+                .lvmt_pending_retention_commits,
         }
     }
 

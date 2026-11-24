@@ -139,6 +139,14 @@ pub struct StorageConfiguration {
     /// Number of single-threaded rayon pools (= in-flight proof cap) the
     /// LVMT backend builds for proof RPC. See `ProofRpcPool`.
     pub lvmt_proof_pool_threads: usize,
+    /// Pending-part retention window in commits (= epochs) for the LVMT
+    /// backend. Non-pivot pending branches whose fork point is above
+    /// `confirmed_height - lvmt_pending_retention_commits` stay reachable
+    /// so mining preflight can replay them. `None` falls back to
+    /// `additional_maintained_snapshot_count × snapshot_epoch_count` so
+    /// default behavior matches the MPT engine's retention window.
+    /// Ignored when `use_lvmt_storage` is false.
+    pub lvmt_pending_retention_commits: Option<u64>,
 }
 
 impl StorageConfiguration {
@@ -191,6 +199,7 @@ impl StorageConfiguration {
             backup_mpt_snapshot: true,
             use_lvmt_storage: false,
             lvmt_proof_pool_threads: defaults::DEFAULT_LVMT_PROOF_POOL_THREADS,
+            lvmt_pending_retention_commits: None,
         }
     }
 

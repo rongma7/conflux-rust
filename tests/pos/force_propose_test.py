@@ -5,13 +5,9 @@
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
-if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
-    # Builds a 1000-block fork rooted at genesis; mining pre-flight asks LVMT
-    # for state on non-pivot parents that have already been make_pivot'd away.
-    # Same LVMT fork-state gap as pos/fork_attack_test — see T3 step (2) in
-    # `工作总结/T3-non-pivot-fork-state.md`.
-    print("Skipping pos/force_propose_test under USE_LVMT_STORAGE", flush=True)
-    sys.exit(0)
+# LVMT skip lifted 2026-11-24 for the step-2 prototype of T3 §7.2 (host
+# side moves make_pivot/migration target to confirmed_height − W). See
+# `pos/fork_attack_test.py` for the same rationale.
 
 import eth_utils
 import time

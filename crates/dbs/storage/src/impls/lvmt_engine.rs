@@ -73,6 +73,15 @@ pub struct LvmtStorageEngine {
     /// amt's `par_iter` from the global rayon pool so a burst of proof
     /// requests cannot contend with state commit.
     proof_rpc_pool: Arc<ProofRpcPool>,
+    /// Pending-part retention window in commits (= epochs). Non-pivot
+    /// branches whose fork point is above `confirmed_height - W` stay
+    /// reachable in pending so mining preflight can replay them. Mirrors
+    /// the MPT engine's `additional_maintained_snapshot_count ×
+    /// snapshot_epoch_count` window on a per-commit granularity — the
+    /// layered MPT engine reaps snapshot-period chunks, LVMT reaps per
+    /// commit. See `工作总结/T3-step2-lvmt-alignment-draft-2026-11-24.md`
+    /// §3 direction A.
+    pending_retention_commits: u64,
 }
 
 impl LvmtStorageEngine {
@@ -92,10 +101,27 @@ impl LvmtStorageEngine {
         );
         let proof_rpc_pool =
             Arc::new(ProofRpcPool::new(conf.lvmt_proof_pool_threads)?);
+        // Explicit override wins; otherwise fall back to the MPT engine's
+        // equivalent retention window so LVMT's user-visible fork-mining
+        // reach stays on parity with MPT by default.
+        let pending_retention_commits =
+            conf.lvmt_pending_retention_commits.unwrap_or_else(|| {
+                u64::from(conf.additional_maintained_snapshot_count)
+                    * u64::from(conf.consensus_param.snapshot_epoch_count)
+            });
+        info!(
+            "LVMT pending retention window: {} commits (override={:?}, \
+             additional_maintained_snapshot_count={}, snapshot_epoch_count={})",
+            pending_retention_commits,
+            conf.lvmt_pending_retention_commits,
+            conf.additional_maintained_snapshot_count,
+            conf.consensus_param.snapshot_epoch_count,
+        );
         Ok(Self {
             manager,
             maintenance_lock: Mutex::new(()),
             proof_rpc_pool,
+            pending_retention_commits,
         })
     }
 
@@ -261,19 +287,35 @@ impl StorageEngine for LvmtStorageEngine {
         let _guard = self.maintenance_lock.lock();
         let confirmed_height = view.confirmed_height();
 
-        // The pending part has to cover `(confirmed_height, pivot_tip]`:
+        // The pending part has to cover `(target_height, pivot_tip]`:
         // consensus can still reorg there, mining's blame / deferred-state
         // preflight can replay non-pivot forks there, and RPC reads pivot
-        // epoch state out of it. Everything at or below `confirmed_height`
-        // is single-chain finalized data — the right shape for historical.
-        // So `make_pivot` and the pending-to-historical migration both
-        // pivot on the same height and the same commit.
-        let pivot_hash = match view.pivot_hash_at_height(confirmed_height) {
+        // epoch state out of it. `target_height` sits `pending_retention
+        // _commits` below `confirmed_height` so forks whose point is in
+        // `(target, confirmed]` stay reachable — the MPT engine's
+        // `confirmed - additional_maintained_snapshot_count × snapshot
+        // _epoch_count` window, per commit instead of per snapshot period.
+        let target_height =
+            confirmed_height.saturating_sub(self.pending_retention_commits);
+        // Mirrors the MPT engine's `H ≤ physical_openable_lower_bound`
+        // short-circuit in `maintain_state_confirmed`: the target has not
+        // yet risen above the engine's openable lower bound (0 under LVMT
+        // until a historical GC path lands), so nothing to prune or
+        // migrate this round.
+        if target_height == 0 {
+            info!(
+                "LVMT notify_state_confirmed: confirmed_height {} within \
+                 retention window {} (target {}), skipping maintenance",
+                confirmed_height, self.pending_retention_commits, target_height,
+            );
+            return 0;
+        }
+        let pivot_hash = match view.pivot_hash_at_height(target_height) {
             Ok(hash) => hash,
             Err(msg) => {
                 warn!(
-                    "LVMT notify_state_confirmed({}): pivot lookup failed: {}; maintenance failed",
-                    confirmed_height, msg
+                    "LVMT notify_state_confirmed({}, target {}): pivot lookup failed: {}; maintenance failed",
+                    confirmed_height, target_height, msg
                 );
                 return 0;
             }
@@ -284,21 +326,21 @@ impl StorageEngine for LvmtStorageEngine {
             Ok(b) => b,
             Err(e) => {
                 warn!(
-                    "LVMT notify_state_confirmed({}): make_pivot failed: {:?}; maintenance failed",
-                    confirmed_height, e
+                    "LVMT notify_state_confirmed({}, target {}): make_pivot failed: {:?}; maintenance failed",
+                    confirmed_height, target_height, e
                 );
                 return 0;
             }
         };
         let adjust_pending_root = match self
             .manager
-            .is_newer_than_pending_root(confirmed_height)
+            .is_newer_than_pending_root(target_height)
         {
             Ok(b) => b,
             Err(e) => {
                 warn!(
-                    "LVMT notify_state_confirmed({}): is_newer_than_pending_root failed: {:?}; maintenance failed",
-                    confirmed_height, e
+                    "LVMT notify_state_confirmed({}, target {}): is_newer_than_pending_root failed: {:?}; maintenance failed",
+                    confirmed_height, target_height, e
                 );
                 return 0;
             }
@@ -306,7 +348,7 @@ impl StorageEngine for LvmtStorageEngine {
 
         if non_pivot_removed || adjust_pending_root {
             let migrate = if adjust_pending_root {
-                Some((confirmed_height, pivot_s2))
+                Some((target_height, pivot_s2))
             } else {
                 None
             };
@@ -314,8 +356,8 @@ impl StorageEngine for LvmtStorageEngine {
                 Ok(m) => m.spawn(),
                 Err(e) => {
                     warn!(
-                        "LVMT notify_state_confirmed({}): maintenance_deferred failed: {:?}; maintenance failed",
-                        confirmed_height, e
+                        "LVMT notify_state_confirmed({}, target {}): maintenance_deferred failed: {:?}; maintenance failed",
+                        confirmed_height, target_height, e
                     );
                     return 0;
                 }
@@ -329,9 +371,12 @@ impl StorageEngine for LvmtStorageEngine {
         // floor it reports.
         let first_available_state_height = 0u64;
         info!(
-            "LVMT notify_state_confirmed: confirmed_height {} \
+            "LVMT notify_state_confirmed: confirmed_height {} target {} \
              pending_new_root_height {} first_available_state_height {}",
-            confirmed_height, confirmed_height, first_available_state_height,
+            confirmed_height,
+            target_height,
+            target_height,
+            first_available_state_height,
         );
         first_available_state_height
     }

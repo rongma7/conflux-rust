@@ -5,13 +5,12 @@
 import os, sys
 sys.path.insert(1, os.path.join(sys.path[0], '..'))
 
-if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
-    # Fork attack drives execution onto non-pivot parents whose state LVMT
-    # has not materialized; the executor panics with
-    # "parent version ... is not available". A proper LVMT fork path is a
-    # separate implementation gap (cf. old-branch get_state_no_commit_inner).
-    print("Skipping pos/fork_attack_test under USE_LVMT_STORAGE", flush=True)
-    sys.exit(0)
+# LVMT skip lifted 2026-11-24 for the step-2 prototype of T3 §7.2 (host
+# side moves make_pivot/migration target to confirmed_height − W). The
+# retention window W = additional_maintained_snapshot_count ×
+# snapshot_epoch_count. Under test defaults (A=1, S=2000), confirmed_height
+# stays under W so maintenance short-circuits, matching MPT behaviour.
+# Delete this comment block if the prototype lands as a permanent fix.
 
 import eth_utils
 import time
