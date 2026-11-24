@@ -29,6 +29,14 @@ produce the same file; if it does not, something in the scenario has stopped
 being a function of the scenario and the golden file is worthless until that is
 fixed.
 
+The state root the binary commits depends on the storage backend, so the
+MPT and LVMT backends each keep their own file: the MPT recording lives in
+``state_root_replay_data/golden.json`` and the LVMT recording, exercised when
+``USE_LVMT_STORAGE=1`` is set, in ``state_root_replay_data/golden_lvmt.json``.
+Either file is selected and recorded by the same env variable, so running
+``--record-golden`` under ``USE_LVMT_STORAGE=1`` rewrites the LVMT file and
+leaves the MPT file alone.
+
 ``state_root_replay_data/pos_genesis`` is the other half of the recording.  The
 framework generates the PoS genesis afresh on every run, the genesis state
 credits and registers those validators, and the genesis state root therefore
@@ -53,11 +61,6 @@ import json
 import os
 import shutil
 import sys
-
-if (os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes") and "--print-test-params" not in sys.argv):
-    # LVMT computes a different state root from MPT; the golden file is MPT-specific.
-    print("Skipping state_root_replay_test under USE_LVMT_STORAGE", flush=True)
-    sys.exit(0)
 
 import eth_utils
 import rlp
@@ -86,7 +89,19 @@ TRANSFER_EVM_SELECTOR = "da8d5daf"
 
 DATA_DIR = os.path.join(
     os.path.dirname(os.path.realpath(__file__)), "state_root_replay_data")
-GOLDEN_FILE = os.path.join(DATA_DIR, "golden.json")
+
+
+def _golden_file():
+    # The state root is backend-specific (LVMT puts its single hash in the
+    # delta_root slot, MPT commits a three-layer composite), so each backend
+    # keeps its own recording; the one in use is picked by USE_LVMT_STORAGE,
+    # the same env variable that selects the backend for the run.
+    if os.environ.get("USE_LVMT_STORAGE", "").lower() in ("1", "true", "yes"):
+        return os.path.join(DATA_DIR, "golden_lvmt.json")
+    return os.path.join(DATA_DIR, "golden.json")
+
+
+GOLDEN_FILE = _golden_file()
 # The pinned PoS genesis, installed over the one the framework generates; see
 # the module docstring for how it was produced and what replacing it costs.
 POS_GENESIS_DIR = os.path.join(DATA_DIR, "pos_genesis")
@@ -444,32 +459,38 @@ class StateRootReplayTest(ConfluxTestFramework):
                 "transaction %s was never executed" % tx.hash_hex()
             assert_equal(int(receipt["outcomeStatus"], 0), 0)
 
-        epoch = hex(self.last_executed_height)
-        root_a = self.rpc.get_storage_root(self.contracts["a"], epoch)
-        root_b = self.rpc.get_storage_root(self.contracts["b"], epoch)
-        root_c = self.rpc.get_storage_root(self.contracts["c"], epoch)
-        self.log.info("storage roots A=%s B=%s C=%s", root_a, root_b, root_c)
+        # The three-layer MPT accessor used below is backend-specific; LVMT
+        # has no delta/intermediate/snapshot layering and no per-account root
+        # by design (see storage2-getStorageRoot-closed-2026-11-19.md).  For
+        # LVMT the receipts-and-roots comparison the rest of the test performs
+        # already witnesses the same storage activity.
+        if os.environ.get("USE_LVMT_STORAGE", "").lower() not in ("1", "true", "yes"):
+            epoch = hex(self.last_executed_height)
+            root_a = self.rpc.get_storage_root(self.contracts["a"], epoch)
+            root_b = self.rpc.get_storage_root(self.contracts["b"], epoch)
+            root_c = self.rpc.get_storage_root(self.contracts["c"], epoch)
+            self.log.info("storage roots A=%s B=%s C=%s", root_a, root_b, root_c)
 
-        # The self destructed contract had storage in the snapshot layer and
-        # is now masked by a tombstone: the account was really removed, which
-        # is the account deletion shape the layout collector has to handle.
-        assert "TOMBSTONE" in root_a.values(), \
-            "contract A was not removed, %s" % root_a
-        assert root_a["snapshot"] is not None, \
-            "contract A never reached the snapshot layer, %s" % root_a
+            # The self destructed contract had storage in the snapshot layer and
+            # is now masked by a tombstone: the account was really removed, which
+            # is the account deletion shape the layout collector has to handle.
+            assert "TOMBSTONE" in root_a.values(), \
+                "contract A was not removed, %s" % root_a
+            assert root_a["snapshot"] is not None, \
+                "contract A never reached the snapshot layer, %s" % root_a
 
-        # The account written throughout the run reached the snapshot layer,
-        # so its layout entry was rewritten while living below the delta trie.
-        assert root_b["snapshot"] is not None and \
-            root_b["intermediate"] is not None, \
-            "the scenario did not cross the snapshot boundaries as intended, " \
-            "%s" % root_b
+            # The account written throughout the run reached the snapshot layer,
+            # so its layout entry was rewritten while living below the delta trie.
+            assert root_b["snapshot"] is not None and \
+                root_b["intermediate"] is not None, \
+                "the scenario did not cross the snapshot boundaries as intended, " \
+                "%s" % root_b
 
-        # The contract created after the first boundaries is alive and holds
-        # storage.
-        assert root_c["intermediate"] is not None or \
-            root_c["delta"] not in (None, "TOMBSTONE"), \
-            "contract C has no storage, %s" % root_c
+            # The contract created after the first boundaries is alive and holds
+            # storage.
+            assert root_c["intermediate"] is not None or \
+                root_c["delta"] not in (None, "TOMBSTONE"), \
+                "contract C has no storage, %s" % root_c
 
         for evm_account in FRESH_EVM_ACCOUNTS:
             balance = self.nodes[0].eth_getBalance(evm_account, "latest")
